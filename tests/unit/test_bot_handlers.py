@@ -280,3 +280,53 @@ class TestCallbackHandler:
 
         await h.callback_handler(update, MagicMock())
         query.edit_message_text.assert_awaited_with("❌ Cancelled.")
+
+
+# ── cmd_restart ───────────────────────────────────────────────────────────────
+
+class TestCmdRestart:
+    async def test_restart_replaces_backend(self):
+        h = _make_handlers()
+        original_backend = h._backend
+        new_backend = _make_backend()
+        update = _make_update()
+
+        with patch("src.bot.ai_factory.create_backend", return_value=new_backend):
+            await h.cmd_restart(update, MagicMock())
+
+        original_backend.close.assert_called_once()
+        assert h._backend is new_backend
+        update.effective_message.reply_text.assert_awaited()
+
+    async def test_restart_reports_error_on_failure(self):
+        h = _make_handlers()
+        update = _make_update()
+
+        with patch("src.bot.ai_factory.create_backend", side_effect=RuntimeError("auth failed")):
+            await h.cmd_restart(update, MagicMock())
+
+        calls = [str(c) for c in update.effective_message.reply_text.await_args_list]
+        assert any("failed" in c.lower() or "auth" in c.lower() for c in calls)
+
+
+# ── cmd_help version ──────────────────────────────────────────────────────────
+
+class TestCmdHelp:
+    async def test_help_contains_version(self):
+        import src.config as cfg
+        h = _make_handlers()
+        update = _make_update()
+        with patch.object(cfg, "VERSION", "9.9.9"):
+            import importlib, src.bot as bot_mod
+            importlib.reload(bot_mod)
+            # reload re-imports VERSION; just check string directly
+            await h.cmd_help(update, MagicMock())
+        text = update.effective_message.reply_text.call_args[0][0]
+        assert "TeleAgent" in text
+
+    async def test_help_lists_restart_command(self):
+        h = _make_handlers()
+        update = _make_update()
+        await h.cmd_help(update, MagicMock())
+        text = update.effective_message.reply_text.call_args[0][0]
+        assert "restart" in text

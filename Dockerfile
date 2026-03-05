@@ -21,15 +21,16 @@ RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
     rm -rf /var/lib/apt/lists/*
 
-# Go
-RUN curl -fsSL https://go.dev/dl/go1.22.4.linux-amd64.tar.gz | tar -C /usr/local -xz
+# Go — arch-aware (supports linux/amd64 and linux/arm64)
+RUN ARCH=$(dpkg --print-architecture) && \
+    curl -fsSL "https://go.dev/dl/go1.22.4.linux-${ARCH}.tar.gz" | tar -C /usr/local -xz
 ENV PATH="/usr/local/go/bin:$PATH"
 
-# GitHub Copilot CLI (correct package: @github/copilot, requires Node 22+)
-RUN npm install -g @github/copilot
+# GitHub Copilot CLI — pinned version (update via Dependabot)
+RUN npm install -g @github/copilot@0.0.421
 
-# OpenAI Codex CLI
-RUN npm install -g @openai/codex
+# OpenAI Codex CLI — pinned version (update via Dependabot)
+RUN npm install -g @openai/codex@0.111.0
 
 # Python dependencies
 WORKDIR /app
@@ -50,5 +51,8 @@ VOLUME /repo
 VOLUME /data
 
 ENV PYTHONUNBUFFERED=1
+
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+  CMD python -c "import src.config; import sys; sys.exit(0)"
 
 CMD ["python", "-m", "src.main"]

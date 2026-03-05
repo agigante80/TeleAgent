@@ -123,24 +123,24 @@ Single file; all jobs wired with `needs:` + `if:` conditions.
 
 ## 4. Test Coverage
 
-As of v0.2.0 (134 tests, `pytest-cov>=5.0`):
+As of v0.2.1 (165 tests, `pytest-cov>=5.0`):
 
 | Module | Coverage |
 |---|---|
 | `src/executor.py` | 100% |
 | `src/history.py` | 100% |
 | `src/repo.py` | 100% |
-| `src/runtime.py` | 100% |
+| `src/runtime.py` | 88% |
 | `src/ai/adapter.py` | 100% |
+| `src/ai/codex.py` | 100% |
 | `src/ai/factory.py` | 100% |
 | `src/config.py` | 98% |
+| `src/ai/session.py` | 79% |
 | `src/ai/copilot.py` | 90% |
 | `src/ai/direct.py` | 80% |
 | `src/main.py` | 74% |
-| `src/bot.py` | 70% |
-| `src/ai/codex.py` | 37% |
-| `src/ai/session.py` | 26% |
-| **TOTAL** | **71%** |
+| `src/bot.py` | 73% |
+| **TOTAL** | **84%** |
 
 CI enforces `--cov-fail-under=70`.
 
@@ -150,110 +150,50 @@ CI enforces `--cov-fail-under=70`.
 
 ---
 
-### 5.1 Test coverage gaps
+### 5.1 Remaining test coverage gaps
 
-#### 5.1.1 `ai/session.py` — 26% (highest risk)
-
-`CopilotSession` is the most critical untested module. Every `pexpect` call needs mocking.
-
-**What to cover:**
-- `_spawn()` success path: mock `pexpect.spawn`, verify prompt detected
-- `_spawn()` auth-failure path: `idx != 0` → `RuntimeError` raised
-- `_reader_thread()`: queue receives chunks; sentinel posted on EOF
-- `send()` / `stream()`: verify queue is drained into response
-- `close()`: child process terminated
-
-**Approach:** `monkeypatch` `pexpect.spawn` with a `MagicMock` that returns controlled `before` bytes.
-
-**File:** `tests/unit/test_session.py` (new)
-
----
-
-#### 5.1.2 `ai/codex.py` — 37%
-
-`CodexBackend` uses `asyncio.create_subprocess_exec` for streaming. Currently only construction is tested.
-
-**What to cover:**
-- `send()`: mock subprocess, verify stdout is accumulated
-- `stream()`: mock subprocess yielding chunks, verify async generator output
-- Non-zero exit code path → error string returned
-
-**File:** `tests/unit/test_codex_backend.py` (new)
-
----
-
-#### 5.1.3 `bot.py` — 70%, `main.py` — 74%
+#### 5.1.1 `bot.py` — 73%, `main.py` — 74%
 
 Remaining uncovered lines:
-- `bot.py:51-71` — `build_app()` function (handler registration)
-- `bot.py:147-163` — `cmd_help` (now includes version string)
-- `bot.py:167-187` — `cmd_info` (uptime formatting)
+- `bot.py:52-72` — `build_app()` function body (handler registration)
+- `bot.py:169-189` — `cmd_info` (uptime formatting branches)
 - `main.py:73-82` — clone failure path + SIGTERM handler teardown
 
----
+#### 5.1.2 `ai/session.py` — 79%
 
-### 5.2 Docker: Go install is architecture-specific
-
-```dockerfile
-RUN curl -fsSL https://go.dev/dl/go1.22.4.linux-amd64.tar.gz | tar -C /usr/local -xz
-```
-
-This **hardcodes `amd64`** and will **silently fail on `arm64`** (wrong binary). The CI builds `linux/amd64,linux/arm64` so the `arm64` image is currently broken for any Go-dependent runtime.
-
-**Fix:** use `$(dpkg --print-architecture)` to select the right tarball, or use the official `golang` base image in a multi-stage build:
-
-```dockerfile
-# Option A — arch-aware download
-RUN ARCH=$(dpkg --print-architecture) && \
-    curl -fsSL "https://go.dev/dl/go1.22.4.linux-${ARCH}.tar.gz" | tar -C /usr/local -xz
-```
+PTY streaming edge cases not yet reached:
+- Lines 85–99 — timeout path inside `_sync_stream_to_queue` main loop
+- Lines 109–111 — `PROMPT_RE` match with empty clean output
+- Lines 132–135 — generic exception in `_sync_stream_to_queue`
 
 ---
 
-### 5.3 npm packages not version-pinned
+### 5.2 npm packages not version-pinned (⚠️ Resolved — partially)
 
-```dockerfile
-RUN npm install -g @github/copilot
-RUN npm install -g @openai/codex
-```
-
-Both install `@latest` on every build. A breaking upstream release silently ships in the next Docker build.
-
-**Fix:** pin to explicit versions:
-```dockerfile
-RUN npm install -g @github/copilot@1.x @openai/codex@0.x
-```
-Track updates via Dependabot (already configured for Docker; npm globals are not covered — add a `package.json` with pinned versions if stability is critical).
+`@github/copilot@0.0.421` and `@openai/codex@0.111.0` are now pinned in the Dockerfile.
+Dependabot monitors Docker but not npm globals; update manually when new versions ship.
 
 ---
 
-### 5.4 No Docker `HEALTHCHECK`
+### 5.3 No `/tarestart` command ✅ Implemented
 
-`docker ps` shows no health status. If the bot crashes silently (e.g. Telegram token invalid), the container stays `Up` with no alert.
+`/tarestart` — calls `backend.close()` then re-initialises via `factory.create_backend()`.
 
-**Fix:**
+---
+
+### 5.4 `runtime.py` reinstalls on every restart ✅ Implemented
+
+Sentinel file per manifest (SHA-256 hash of file content) written under `/data/.install_sentinels/`.
+Install is skipped on subsequent starts if the manifest hasn't changed.
+
+---
+
+### 5.5 Docker `HEALTHCHECK` ✅ Added
+
 ```dockerfile
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-  CMD python -c "import sys; sys.exit(0)"
+  CMD python -c "import src.config; import sys; sys.exit(0)"
 ```
-
-A better check would hit the Telegram `getMe` API endpoint.
-
----
-
-### 5.5 `runtime.py` reinstalls deps on every container restart
-
-`install_deps()` runs `npm install`, `pip install`, `go mod download` unconditionally at startup. On slow networks this adds 30–120 s to every restart.
-
-**Fix:** cache the result — write a sentinel file after a successful install and skip if it exists (keyed to `requirements.txt` / `package.json` hash).
-
----
-
-### 5.6 No `/tarestart` command
-
-The only way to restart the AI backend session (e.g. after a Copilot auth refresh) is `docker restart`, which also re-clones the repo.
-
-**Proposed command:** `/tarestart` — calls `backend.close()` then re-initialises via `factory.create_backend()` without restarting the container.
 
 ---
 
