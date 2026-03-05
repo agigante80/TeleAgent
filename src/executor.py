@@ -25,7 +25,6 @@ def truncate_output(text: str, max_chars: int) -> str:
         kept.append(line)
         total += len(line) + 1
     kept.reverse()
-    skipped = len(lines) - len(kept)
     return f"⚠️ Output truncated — showing last {len(kept)} of {len(lines)} lines:\n" + "\n".join(kept)
 
 
