@@ -16,6 +16,7 @@ from telegram.ext import (
 from src.ai.adapter import AICLIBackend
 from src.config import Settings, VERSION
 from src import executor, history, repo
+from src.ai import factory as ai_factory
 
 logger = logging.getLogger(__name__)
 
@@ -153,6 +154,7 @@ class _BotHandlers:
             f"/{p}git — git status + recent commits\n"
             f"/{p}status — check if AI is busy\n"
             f"/{p}clear — clear conversation history\n"
+            f"/{p}restart — restart AI backend session\n"
             f"/{p}info — project & bot info\n"
             f"/{p}help — this message\n\n"
             f"*AI commands (forwarded to AI CLI):*\n"
@@ -193,6 +195,17 @@ class _BotHandlers:
             await history.clear_history(chat_id)
         self._backend.clear_history()
         await _reply(update, "🗑 Conversation history cleared.")
+
+    @_requires_auth
+    async def cmd_restart(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        await _reply(update, "🔄 Restarting AI backend…")
+        try:
+            self._backend.close()
+            self._backend = ai_factory.create_backend(self._settings.ai)
+            await _reply(update, f"✅ AI backend restarted ({self._settings.ai.ai_cli})")
+        except Exception as exc:
+            logger.exception("Backend restart failed")
+            await _reply(update, f"⚠️ Restart failed: {exc}")
 
     # ── Callback & AI forwarding ──────────────────────────────────────────
 
@@ -258,6 +271,7 @@ def build_app(settings: Settings, backend: AICLIBackend, start_time: float) -> A
     app.add_handler(CommandHandler(f"{p}git", h.cmd_git))
     app.add_handler(CommandHandler(f"{p}status", h.cmd_status))
     app.add_handler(CommandHandler(f"{p}clear", h.cmd_clear))
+    app.add_handler(CommandHandler(f"{p}restart", h.cmd_restart))
     app.add_handler(CommandHandler(f"{p}help", h.cmd_help))
     app.add_handler(CommandHandler(f"{p}info", h.cmd_info))
     app.add_handler(CallbackQueryHandler(h.callback_handler))

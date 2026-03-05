@@ -31,14 +31,23 @@ The bot sends a 🟢 Ready message to your chat when it's up.
 
 ### Using the pre-built image
 
-A Docker image is published automatically to GitHub Container Registry on every push to `main` and on version tags:
+A Docker image is published automatically to GitHub Container Registry on every push:
+
+| Branch/event | Image tag |
+|---|---|
+| Push to `develop` | `ghcr.io/agigante80/teleagent:develop` |
+| Push to `main` | `ghcr.io/agigante80/teleagent:latest` + `ghcr.io/agigante80/teleagent:main` |
+| Version release | `ghcr.io/agigante80/teleagent:X.Y.Z` |
 
 ```bash
-# latest
-docker pull ghcr.io/<your-github-username>/cli-telegram:latest
+# Latest stable
+docker pull ghcr.io/agigante80/teleagent:latest
 
-# specific version
-docker pull ghcr.io/<your-github-username>/cli-telegram:v1.2.3
+# Latest development build
+docker pull ghcr.io/agigante80/teleagent:develop
+
+# Specific version
+docker pull ghcr.io/agigante80/teleagent:0.2.1
 ```
 
 In your `docker-compose.yml`, replace the `build:` section with:
@@ -46,7 +55,7 @@ In your `docker-compose.yml`, replace the `build:` section with:
 ```yaml
 services:
   bot:
-    image: ghcr.io/<your-github-username>/cli-telegram:latest
+    image: ghcr.io/agigante80/teleagent:latest
 ```
 
 ---
@@ -62,8 +71,9 @@ Commands use a configurable prefix (`BOT_CMD_PREFIX`, default `ta`):
 | `/tagit` | `git status` + last 3 commits |
 | `/tastatus` | Show active AI requests |
 | `/taclear` | Clear conversation history |
+| `/tarestart` | Restart the AI backend session |
 | `/tainfo` | Repo, branch, AI backend, uptime |
-| `/tahelp` | Full command reference |
+| `/tahelp` | Full command reference + version |
 
 **Everything else** (free text or any other `/command`) is forwarded to the AI.
 
@@ -116,6 +126,7 @@ Copy `.env.example` — it documents every variable with examples.
 | `MAX_OUTPUT_CHARS` | `3000` | Truncate/summarize output beyond this length |
 | `HISTORY_ENABLED` | `true` | Set `false` to disable conversation history storage |
 | `STREAM_RESPONSES` | `true` | Set `false` to wait for full response before sending |
+| `STREAM_THROTTLE_SECS` | `1.0` | Seconds between streaming message edits |
 
 ### Optional
 
