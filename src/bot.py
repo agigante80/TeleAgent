@@ -14,7 +14,7 @@ from telegram.ext import (
 )
 
 from src.ai.adapter import AICLIBackend
-from src.config import Settings
+from src.config import Settings, VERSION
 from src import executor, history, repo
 
 logger = logging.getLogger(__name__)
@@ -146,7 +146,7 @@ class _BotHandlers:
     async def cmd_help(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
         p = self._p
         text = (
-            f"🤖 *TeleAgent — Command Reference*\n\n"
+            f"🤖 *TeleAgent v{VERSION} — Command Reference*\n\n"
             f"*Utility commands:*\n"
             f"/{p}run `<cmd>` — run a shell command in the repo\n"
             f"/{p}sync — git pull (fetch latest changes)\n"

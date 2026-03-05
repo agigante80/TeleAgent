@@ -70,3 +70,6 @@ class Settings(BaseSettings):
 from pathlib import Path  # noqa: E402
 REPO_DIR = Path("/repo")
 DB_PATH = Path("/data/history.db")
+
+_VERSION_FILE = Path(__file__).parent.parent / "VERSION"
+VERSION = _VERSION_FILE.read_text().strip() if _VERSION_FILE.exists() else "unknown"
