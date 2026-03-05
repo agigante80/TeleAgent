@@ -325,7 +325,7 @@ jobs:
           exit-code: '0'  # don't fail the build, just report
 
       - name: 📤 Upload Trivy results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: trivy-results.sarif
@@ -346,9 +346,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: [version, docker-publish]
+    # Runs on main when VERSION is clean semver (no -dev suffix).
+    # docker-publish may be 'skipped' (manual dispatch) — that's still allowed.
     if: |
       needs.version.result == 'success' &&
-      needs.docker-publish.result == 'success' &&
+      (needs.docker-publish.result == 'success' || needs.docker-publish.result == 'skipped') &&
       needs.version.outputs.is_release == 'true' &&
       github.ref == 'refs/heads/main'
     steps:
