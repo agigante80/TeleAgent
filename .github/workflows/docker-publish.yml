@@ -1,10 +1,16 @@
 name: Docker Publish
 
+# Runs automatically after Main Gate succeeds on main.
+# Also runs on version tags and can be triggered manually.
+
 on:
-  push:
+  workflow_run:
+    workflows: ["Main Gate"]
     branches: [main]
+    types: [completed]
+  push:
     tags: ["v*.*.*"]
-  workflow_dispatch:  # allow manual trigger
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
@@ -14,6 +20,10 @@ jobs:
   build-and-push:
     name: Build & push image
     runs-on: ubuntu-latest
+    # For workflow_run triggers: only proceed if the gate passed
+    if: >
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
     permissions:
       contents: read
       packages: write
