@@ -84,3 +84,28 @@ class TestStatus:
         with patch("asyncio.create_subprocess_exec", side_effect=fake_exec):
             result = await repo_module.status()
         assert "M  file.py" in result
+
+
+class TestConfigureGitAuth:
+    async def test_no_op_when_token_empty(self):
+        """configure_git_auth does nothing when token is blank."""
+        import src.repo as repo_module
+        from unittest.mock import AsyncMock, patch
+        with patch("asyncio.create_subprocess_exec", new=AsyncMock()) as mock_proc:
+            await repo_module.configure_git_auth("")
+        mock_proc.assert_not_called()
+
+    async def test_sets_git_insteadof(self):
+        """configure_git_auth calls git config with URL rewriting args."""
+        import src.repo as repo_module
+        from unittest.mock import AsyncMock, MagicMock, patch
+        proc = MagicMock()
+        proc.communicate = AsyncMock(return_value=(b"", b""))
+        proc.returncode = 0
+        with patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=proc)) as mock_exec:
+            await repo_module.configure_git_auth("mytoken")
+        args = mock_exec.call_args[0]
+        assert args[0] == "git"
+        assert "mytoken" in " ".join(str(a) for a in args)
+        assert "insteadOf" in " ".join(str(a) for a in args)
+        assert "https://github.com/" in " ".join(str(a) for a in args)

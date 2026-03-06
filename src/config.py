@@ -14,7 +14,7 @@ class TelegramConfig(BaseSettings):
 class GitHubConfig(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore")
 
-    github_token: str = ""
+    github_repo_token: str = ""
     github_repo: str = ""
     branch: str = "main"
 

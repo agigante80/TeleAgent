@@ -13,7 +13,7 @@ class TestStartup:
         tg.chat_id = "99999"
         tg.bot_token = "fake-token"
         gh = MagicMock(spec=GitHubConfig)
-        gh.github_token = "tok"
+        gh.github_repo_token = "tok"
         gh.github_repo = "owner/repo"
         gh.branch = "main"
         bot = MagicMock(spec=BotConfig)
@@ -46,7 +46,7 @@ class TestStartup:
             from src import repo, runtime, history
             from src.ai.factory import create_backend
 
-            await mock_clone(settings.github.github_token, settings.github.github_repo, settings.github.branch)
+            await mock_clone(settings.github.github_repo_token, settings.github.github_repo, settings.github.branch)
             await mock_install()
             await mock_init_db()
             _ = mock_backend
