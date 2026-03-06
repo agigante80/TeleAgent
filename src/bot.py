@@ -178,30 +178,59 @@ class _BotHandlers:
             await _reply(update, f"Confirmation prompts: *{state}* ({source}){skipped}")
 
     @_requires_auth
+    async def cmd_ta(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        """Dispatcher: /ta <subcommand> [args…] — ergonomic alias for all /{p}* commands."""
+        sub = ctx.args[0].lower() if ctx.args else ""
+        ctx.args = list(ctx.args[1:])
+
+        dispatch = {
+            "help":    self.cmd_help,
+            "run":     self.cmd_run,
+            "sync":    self.cmd_sync,
+            "git":     self.cmd_git,
+            "status":  self.cmd_status,
+            "clear":   self.cmd_clear,
+            "restart": self.cmd_restart,
+            "confirm": self.cmd_confirm,
+            "info":    self.cmd_info,
+        }
+
+        handler = dispatch.get(sub)
+        if handler is None:
+            if sub:
+                await _reply(update, f"❓ Unknown command: `{sub}`")
+            await self.cmd_help(update, ctx)
+            return
+
+        await handler(update, ctx)
+
+    @_requires_auth
     async def cmd_help(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
         p = self._p
         confirm_note = (
             f"*Destructive shell commands* (push, merge, rm, force) require confirmation.\n"
-            f"Use `/{p}confirm off` to disable for this session, `/{p}confirm on` to re-enable."
+            f"Use `/ta confirm off` to disable for this session, `/ta confirm on` to re-enable."
         )
         text = (
             f"🤖 *TeleAgent v{VERSION} — Command Reference*\n\n"
-            f"*Utility commands:*\n"
-            f"/{p}run `<cmd>` — run a shell command in the repo\n"
-            f"/{p}sync — git pull (fetch latest changes)\n"
-            f"/{p}git — git status + recent commits\n"
-            f"/{p}status — check if AI is busy\n"
-            f"/{p}clear — clear conversation history\n"
-            f"/{p}restart — restart AI backend session\n"
-            f"/{p}confirm `[on|off]` — toggle/query confirmation prompts\n"
-            f"/{p}info — project & bot info\n"
-            f"/{p}help — this message\n\n"
+            f"*Preferred syntax:* `/ta <command>` (space — avoids autocorrect)\n"
+            f"*Legacy syntax:* `/{p}<command>` (no space — still works)\n\n"
+            f"*Commands:*\n"
+            f"`/ta run` `<cmd>` — run a shell command in the repo\n"
+            f"`/ta sync` — git pull (fetch latest changes)\n"
+            f"`/ta git` — git status + recent commits\n"
+            f"`/ta status` — check if AI is busy\n"
+            f"`/ta clear` — clear conversation history\n"
+            f"`/ta restart` — restart AI backend session\n"
+            f"`/ta confirm` `[on|off]` — toggle/query confirmation prompts\n"
+            f"`/ta info` — project & bot info\n"
+            f"`/ta help` — this message\n\n"
             f"*AI commands (forwarded to AI CLI):*\n"
             f"Any other text or /command is sent directly to the AI.\n"
             f"Examples: `/init`, `/plan`, `/review`, `/diff`, `/model`\n\n"
             f"*Voice messages:*\n"
             f"Send a voice or audio message to transcribe and forward to the AI.\n"
-            f"Requires `WHISPER_PROVIDER=openai` (see /{p}info for current status).\n\n"
+            f"Requires `WHISPER_PROVIDER=openai` (see `/ta info` for current status).\n\n"
             f"{confirm_note}"
         )
         await update.effective_message.reply_text(text, parse_mode="Markdown")
@@ -369,6 +398,7 @@ def build_app(settings: Settings, backend: AICLIBackend, start_time: float) -> A
     h = _BotHandlers(settings, backend, start_time)
     p = _prefix(settings)
 
+    app.add_handler(CommandHandler(p, h.cmd_ta))
     app.add_handler(CommandHandler(f"{p}run", h.cmd_run))
     app.add_handler(CommandHandler(f"{p}sync", h.cmd_sync))
     app.add_handler(CommandHandler(f"{p}git", h.cmd_git))
