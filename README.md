@@ -22,7 +22,7 @@ Send messages to your Telegram bot and the AI responds in the context of your Gi
 
 ```bash
 cp .env.example .env
-# fill in TG_BOT_TOKEN, TG_CHAT_ID, GITHUB_TOKEN, GITHUB_REPO, AI_CLI
+# fill in TG_BOT_TOKEN, TG_CHAT_ID, GITHUB_REPO_TOKEN, GITHUB_REPO, AI_CLI
 cp docker-compose.yml.example docker-compose.yml
 docker compose up -d
 ```
@@ -102,7 +102,7 @@ Copy `.env.example` — it documents every variable with examples.
 |---|---|
 | `TG_BOT_TOKEN` | Bot token from [@BotFather](https://t.me/BotFather) |
 | `TG_CHAT_ID` | Your Telegram chat/group ID — bot ignores all others |
-| `GITHUB_TOKEN` | PAT with `repo` scope — used for git clone |
+| `GITHUB_REPO_TOKEN` | PAT with `repo` scope — used for git clone/push |
 | `GITHUB_REPO` | `owner/repo` format |
 
 ### AI Backend

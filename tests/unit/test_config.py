@@ -32,7 +32,7 @@ class TestGitHubConfig:
         cfg = GitHubConfig()
         assert cfg.branch == "main"
         assert cfg.github_repo == ""
-        assert cfg.github_token == ""
+        assert cfg.github_repo_token == ""
 
     def test_branch_override(self, monkeypatch):
         monkeypatch.setenv("BRANCH", "develop")

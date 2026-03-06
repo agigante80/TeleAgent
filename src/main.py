@@ -18,12 +18,14 @@ logger = logging.getLogger(__name__)
 async def startup(settings: Settings) -> None:
     start_time = time.time()
 
+    token = settings.github.github_repo_token
     logger.info("Cloning repository…")
     await repo.clone(
-        settings.github.github_token,
+        token,
         settings.github.github_repo,
         settings.github.branch,
     )
+    await repo.configure_git_auth(token)
 
     logger.info("Installing dependencies…")
     dep_result = await runtime.install_deps()

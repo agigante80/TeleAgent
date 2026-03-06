@@ -7,19 +7,36 @@ from src.config import REPO_DIR
 logger = logging.getLogger(__name__)
 
 
-async def clone(github_token: str, github_repo: str, branch: str) -> None:
+async def clone(github_repo_token: str, github_repo: str, branch: str) -> None:
     if (REPO_DIR / ".git").exists():
         logger.info("Repo already cloned at %s, skipping clone.", REPO_DIR)
         return
     if not github_repo:
         logger.warning("No GITHUB_REPO set and no existing repo — nothing to clone.")
         return
-    url = f"https://x-token-auth:{github_token}@github.com/{github_repo.removeprefix('https://github.com/')}"
+    url = f"https://x-token-auth:{github_repo_token}@github.com/{github_repo.removeprefix('https://github.com/')}"
     logger.info("Cloning %s (branch: %s)…", github_repo, branch)
     await asyncio.to_thread(
         git.Repo.clone_from, url, REPO_DIR, branch=branch, depth=1
     )
     logger.info("Clone complete → %s", REPO_DIR)
+
+
+async def configure_git_auth(token: str) -> None:
+    """Configure git globally to inject token for all github.com HTTPS operations."""
+    if not token:
+        return
+    url_prefix = f"https://x-token-auth:{token}@github.com/"
+    proc = await asyncio.create_subprocess_exec(
+        "git", "config", "--global",
+        f"url.{url_prefix}.insteadOf", "https://github.com/",
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+    )
+    _, stderr = await proc.communicate()
+    if proc.returncode != 0:
+        logger.warning("git config auth failed: %s", stderr.decode().strip())
+    else:
+        logger.info("Git global auth configured for github.com")
 
 
 async def pull() -> str:
