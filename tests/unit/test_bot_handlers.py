@@ -480,3 +480,55 @@ class TestHandleVoice:
 
         error_text = status_msg.edit_text.call_args[0][0]
         assert "API down" in error_text
+
+
+# ── cmd_ta dispatcher ─────────────────────────────────────────────────────────
+
+class TestCmdTa:
+    async def test_dispatches_help(self):
+        h = _make_handlers()
+        update = _make_update()
+        ctx = MagicMock()
+        ctx.args = ["help"]
+        await h.cmd_ta(update, ctx)
+        text = update.effective_message.reply_text.call_args[0][0]
+        assert "TeleAgent" in text
+
+    async def test_dispatches_info(self):
+        h = _make_handlers()
+        update = _make_update()
+        ctx = MagicMock()
+        ctx.args = ["info"]
+        await h.cmd_ta(update, ctx)
+        update.effective_message.reply_text.assert_awaited()
+        text = update.effective_message.reply_text.call_args[0][0]
+        assert "Repo" in text or "repo" in text.lower()
+
+    async def test_dispatches_run_passes_remaining_args(self):
+        h = _make_handlers()
+        update = _make_update()
+        ctx = MagicMock()
+        ctx.args = ["run", "ls", "-la"]
+        with patch("src.bot.executor.run_shell", new=AsyncMock(return_value="output")):
+            await h.cmd_ta(update, ctx)
+        # ctx.args should have been rewritten to ["ls", "-la"]
+        assert ctx.args == ["ls", "-la"]
+
+    async def test_unknown_subcommand_shows_error_and_help(self):
+        h = _make_handlers()
+        update = _make_update()
+        ctx = MagicMock()
+        ctx.args = ["oops"]
+        await h.cmd_ta(update, ctx)
+        calls = [c[0][0] for c in update.effective_message.reply_text.call_args_list]
+        assert any("Unknown" in t or "unknown" in t for t in calls)
+        assert any("TeleAgent" in t for t in calls)
+
+    async def test_no_args_shows_help(self):
+        h = _make_handlers()
+        update = _make_update()
+        ctx = MagicMock()
+        ctx.args = []
+        await h.cmd_ta(update, ctx)
+        text = update.effective_message.reply_text.call_args[0][0]
+        assert "TeleAgent" in text
