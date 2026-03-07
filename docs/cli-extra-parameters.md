@@ -1,6 +1,6 @@
 # CLI Options — Design Document
 
-> Status: **Planning**
+> Status: **Implemented** (v0.2.8)
 > Branch: `develop`
 
 This document analyses the design for exposing AI backend CLI options via a single TeleAgent environment variable (`AI_CLI_OPTS`). It covers the current state, a deep review of each backend's available options, critical trade-offs, and the recommended implementation plan.
@@ -269,35 +269,21 @@ AI_CLI_OPTS=--allow-tool 'shell(git:*)'
 
 ---
 
-## 6. Implementation Plan
+## 6. Implementation
 
-When approved, the following changes are required:
+Implemented in v0.2.8. Changes made:
 
 | File | Change |
 |------|--------|
-| `src/config.py` | Add `ai_cli_opts: str = ""` to `AIConfig` |
-| `src/ai/session.py` | Read `opts` from config; if empty → `["--allow-all"]`; else `shlex.split(opts)` |
-| `src/ai/copilot.py` | Pass `ai.ai_cli_opts` when constructing `CopilotSession` |
-| `src/ai/codex.py` | Read `opts` from config; if empty → `["--approval-mode", "full-auto"]`; else `shlex.split(opts)`; **also fix `auto` → `full-auto` bug** |
-| `src/ai/factory.py` | Pass `ai_cli_opts` field when constructing backends |
-| `.env.example` | Document `AI_CLI_OPTS` with replacement semantics and examples |
-| `README.md` | Add `AI_CLI_OPTS` to the environment variable table with prominent footgun warning |
-| `tests/unit/test_session.py` | Test: empty opts → `["--allow-all"]`; non-empty → `shlex.split` result |
-| `tests/unit/test_codex_backend.py` | Test: empty opts → `full-auto`; non-empty → as-is; `auto` bug is fixed |
-
-Estimated scope: **small** — ~60 lines of production code + tests.
-
-### Startup warning logic (recommended addition)
-
-When `AI_CLI_OPTS` is set and `AI_CLI=api`:
-```python
-logger.warning("AI_CLI_OPTS is set but AI_CLI=api does not use a subprocess CLI; the value will be ignored.")
-```
-
-When `AI_CLI_OPTS` is set and `AI_CLI=copilot`, and the value does not contain `--allow-all-tools` or `--allow-all`:
-```python
-logger.warning("AI_CLI_OPTS is set for Copilot without --allow-all-tools. Tool calls may block waiting for confirmation.")
-```
+| `src/config.py` | Added `ai_cli_opts: str = ""` to `AIConfig` (env var: `AI_CLI_OPTS`) |
+| `src/ai/session.py` | `CopilotSession(opts=...)`: empty → `["--allow-all"]`, non-empty → `shlex.split(opts)` |
+| `src/ai/copilot.py` | Passes `opts` down to `CopilotSession` |
+| `src/ai/codex.py` | **Fixed `--approval-mode auto` → `full-auto`**; `opts` support: empty → `["--approval-mode","full-auto"]`, non-empty → `shlex.split(opts)` |
+| `src/ai/factory.py` | Wires `ai.ai_cli_opts` to both backends; logs a warning when `AI_CLI=api` and opts is set |
+| `README.md` | Added `AI_CLI_OPTS` row with replacement-semantics warning |
+| `tests/unit/test_session.py` | Updated `_build_cmd` tests; added opts passthrough and default tests |
+| `tests/unit/test_codex_backend.py` | Verified `full-auto` fix; added opts passthrough tests |
+| `tests/unit/test_config.py` | Added `AI_CLI_OPTS` env var parsing tests |
 
 ---
 

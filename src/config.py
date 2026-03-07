@@ -43,6 +43,13 @@ class AIConfig(BaseSettings):
     # Codex
     codex_model: str = "o3"
 
+    # CLI options passthrough — passed verbatim to the backend CLI subprocess.
+    # Empty (default) = each backend applies its own full-auto defaults:
+    #   copilot → --allow-all  |  codex → --approval-mode full-auto
+    # Non-empty = replaces the defaults entirely; must include full-auto flags if needed.
+    # Ignored (with a warning) when AI_CLI=api (no subprocess).
+    ai_cli_opts: str = ""
+
     # Generic / api backend
     ai_provider: Literal["openai", "anthropic", "ollama", "openai-compat", ""] = ""
     ai_api_key: str = ""
