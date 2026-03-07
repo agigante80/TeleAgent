@@ -117,6 +117,7 @@ Copy `.env.example` — it documents every variable with examples.
 | `AI_MODEL` | — | Model for `api` backend |
 | `AI_BASE_URL` | — | Base URL for Ollama or compatible endpoints |
 | `CODEX_MODEL` | `o3` | Model for `codex` backend |
+| `AI_CLI_OPTS` | — | Raw options passed verbatim to the CLI subprocess. **Empty (default) = full-auto per backend** (Copilot: `--allow-all`; Codex: `--approval-mode full-auto`). **When set, replaces the defaults entirely** — must include full-auto flags if still needed (e.g. `--allow-all --allow-url github.com`). Ignored (with a warning) when `AI_CLI=api`. |
 
 ### Bot Behaviour
 

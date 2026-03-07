@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import shlex
 from collections.abc import AsyncGenerator
 
 from src.ai.adapter import AICLIBackend, SubprocessMixin
@@ -8,14 +9,17 @@ logger = logging.getLogger(__name__)
 
 
 class CodexBackend(SubprocessMixin, AICLIBackend):
-    def __init__(self, api_key: str, model: str = "o3") -> None:
+    def __init__(self, api_key: str, model: str = "o3", opts: str = "") -> None:
         self._api_key = api_key
         self._model = model
+        self._opts = opts
 
     def _make_cmd(self, prompt: str) -> tuple[list[str], dict]:
         import os
         env = {**os.environ, "OPENAI_API_KEY": self._api_key}
-        cmd = ["codex", prompt, "--approval-mode", "auto", "--model", self._model]
+        # Empty opts → full-auto default; non-empty → verbatim (replaces defaults)
+        extra = shlex.split(self._opts) if self._opts else ["--approval-mode", "full-auto"]
+        cmd = ["codex", prompt] + extra + ["--model", self._model]
         return cmd, env
 
     async def _create_subprocess(self, prompt: str) -> asyncio.subprocess.Process:

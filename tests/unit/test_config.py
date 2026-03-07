@@ -77,3 +77,12 @@ class TestAIConfig:
         monkeypatch.setenv("AI_CLI", "unknown")
         with pytest.raises(ValidationError):
             AIConfig()
+
+    def test_ai_cli_opts_default_empty(self):
+        cfg = AIConfig()
+        assert cfg.ai_cli_opts == ""
+
+    def test_ai_cli_opts_from_env(self, monkeypatch):
+        monkeypatch.setenv("AI_CLI_OPTS", "--allow-all-tools --allow-url github.com")
+        cfg = AIConfig()
+        assert cfg.ai_cli_opts == "--allow-all-tools --allow-url github.com"

@@ -67,7 +67,30 @@ def test_build_cmd_no_model():
 
 def test_build_cmd_with_model():
     s = CopilotSession(model="gpt-4o")
-    assert s._build_cmd("q") == ["copilot", "-p", "q", "--allow-all", "--model", "gpt-4o"]
+    assert s._build_cmd("q") == ["copilot", "-p", "q", "--model", "gpt-4o", "--allow-all"]
+
+
+def test_build_cmd_empty_opts_defaults_to_allow_all():
+    s = CopilotSession(opts="")
+    assert "--allow-all" in s._build_cmd("q")
+
+
+def test_build_cmd_custom_opts_replaces_allow_all():
+    s = CopilotSession(opts="--allow-url github.com --allow-all-tools")
+    cmd = s._build_cmd("q")
+    assert "--allow-url" in cmd
+    assert "github.com" in cmd
+    assert "--allow-all-tools" in cmd
+    assert "--allow-all" not in cmd
+
+
+def test_build_cmd_custom_opts_with_model():
+    s = CopilotSession(model="gpt-4o", opts="--allow-all-tools")
+    cmd = s._build_cmd("q")
+    assert "--model" in cmd
+    assert "gpt-4o" in cmd
+    assert "--allow-all-tools" in cmd
+    assert "--allow-all" not in cmd
 
 
 # ── send ──────────────────────────────────────────────────────────────────────

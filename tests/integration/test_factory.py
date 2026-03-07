@@ -56,7 +56,7 @@ class TestBackendFactory:
         # Patch where CopilotSession is used, not where it's defined
         with patch("src.ai.copilot.CopilotSession") as MockSession:
             backend = create_backend(cfg)
-        MockSession.assert_called_once_with(model="gpt-4o", env=MockSession.call_args[1]["env"])
+        MockSession.assert_called_once_with(model="gpt-4o", env=MockSession.call_args[1]["env"], opts="")
         assert cfg.copilot_model == "gpt-4o"
 
     def test_codex_model_passed_through(self, monkeypatch):
