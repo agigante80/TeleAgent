@@ -172,15 +172,19 @@ Copy `.env.example` — it documents every variable with examples.
 
 ## Slack Setup
 
-1. Go to [api.slack.com/apps](https://api.slack.com/apps) → **Create New App** → **From scratch**
-2. Under **OAuth & Permissions**, add Bot Token Scopes: `chat:write`, `channels:history`, `groups:history`, `im:history`, `mpim:history`, `files:read`
-3. Install the app to your workspace — copy the **Bot OAuth Token** (`xoxb-…`) → `SLACK_BOT_TOKEN`
-4. Under **Socket Mode**, enable it — copy the **App-Level Token** (`xapp-…`) → `SLACK_APP_TOKEN`
-5. Under **Event Subscriptions** → **Subscribe to bot events**: `message.channels`, `message.groups`, `message.im`, `message.mpim`
-6. Invite the bot to a channel: `/invite @YourBotName` — copy the channel ID → `SLACK_CHANNEL_ID` (optional but recommended)
-7. Set `PLATFORM=slack` in your `.env` (remove or leave `TG_*` vars — they're not needed)
+> Full step-by-step guide: **[docs/features/slack-setup.md](docs/features/slack-setup.md)**
 
-Commands work as plain-text prefix messages (e.g. `ta sync`, `ta run ls -la`). No slash command registration required.
+Quick summary:
+
+1. [api.slack.com/apps](https://api.slack.com/apps) → **Create New App** → **From scratch**
+2. **OAuth & Permissions** → Bot Token Scopes: `chat:write`, `channels:history`, `groups:history`, `im:history`, `mpim:history`, `files:read`
+3. **Socket Mode** → Enable → Generate token (`connections:write` scope) → `SLACK_APP_TOKEN` (`xapp-…`)
+4. **Event Subscriptions** → Enable → Subscribe to bot events: `message.channels`, `message.groups`, `message.im`, `message.mpim` → Save
+5. **OAuth & Permissions** → **Install to Workspace** → copy Bot OAuth Token → `SLACK_BOT_TOKEN` (`xoxb-…`)
+6. In Slack: `/invite @YourBotName` in a channel → copy Channel ID → `SLACK_CHANNEL_ID`
+7. Set `PLATFORM=slack` in `.env` and restart
+
+> ⚠️ After any scope or event change, **reinstall the app** (step 5) to get a fresh token.
 
 ---
 
