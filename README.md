@@ -174,7 +174,7 @@ Copy `.env.example` — it documents every variable with examples.
 
 ## Slack Setup
 
-> Full step-by-step guide: **[docs/features/slack-setup.md](docs/features/slack-setup.md)**
+> Full step-by-step guide: **[docs/slack-setup.md](docs/slack-setup.md)**
 
 Quick summary:
 
