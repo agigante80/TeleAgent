@@ -70,7 +70,20 @@ In the left sidebar: **OAuth & Permissions**:
 
 ---
 
-## 6. Invite the Bot to a Channel
+## 6. Enable Direct Messages (Messages Tab)
+
+By default, Slack disables direct messages to bots. To allow users to DM the bot:
+
+1. Left sidebar → **Features** → **App Home**
+2. Scroll to **Show Tabs** → **Messages Tab**
+3. Check ✅ **"Allow users to send Slash commands and messages from the messages tab"**
+4. Click **Save** — no reinstall needed
+
+The bot will now appear under **Apps** in the Slack sidebar and accept DMs.
+
+---
+
+## 7. Invite the Bot to a Channel
 
 In your Slack workspace:
 
@@ -80,7 +93,7 @@ In your Slack workspace:
 
 ---
 
-## 7. Configure `.env`
+## 8. Configure `.env`
 
 ```env
 PLATFORM=slack
@@ -95,7 +108,7 @@ All other vars (`GITHUB_REPO`, `GITHUB_REPO_TOKEN`, `COPILOT_GITHUB_TOKEN`, `AI_
 
 ---
 
-## 8. Start the Bot
+## 9. Start the Bot
 
 ```bash
 docker compose up -d --build
@@ -141,9 +154,11 @@ Commands use the configurable prefix (`BOT_CMD_PREFIX`, default `ta`) as plain-t
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| Bot visible in Apps but can't DM it | Events not subscribed | Complete step 4, then reinstall (step 5) |
-| Can't invite bot to channel | Missing scope or not installed | Reinstall after adding scopes |
+| Bot visible in Apps but can't DM it | Messages Tab disabled | **App Home** → **Messages Tab** → enable "Allow users to send Slash commands and messages from the messages tab" |
+| Can't invite bot to channel | Missing scope or not installed | Reinstall app (step 5) after adding scopes |
+| `/invite @BotName` doesn't work | Use the channel's **Integrations** tab instead | Channel settings → **Integrations** → **Add apps** |
 | `invalid_auth` in logs | Wrong or stale token | Reinstall app (step 5) and update `SLACK_BOT_TOKEN` |
-| `not_in_channel` errors | Bot not invited | `/invite @BotName` in the channel |
+| `not_in_channel` errors | Bot not in channel | Add via channel Integrations → Add apps |
 | Ready message not sent | `SLACK_CHANNEL_ID` not set | Add channel ID to `.env` and restart |
 | Streaming not working | `STREAM_RESPONSES=false` | Set `STREAM_RESPONSES=true` in `.env` |
+| Events not received | Event Subscriptions not enabled | Complete step 4, then reinstall (step 5) |
