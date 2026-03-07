@@ -1,5 +1,7 @@
 import asyncio
 import logging
+import os
+import pathlib
 import signal
 import sys
 import time
@@ -13,6 +15,29 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+_HEALTH_FILE = pathlib.Path("/tmp/healthy")
+_VERSION_FILE = pathlib.Path(__file__).parent.parent / "VERSION"
+
+
+def _read_version() -> str:
+    try:
+        return _VERSION_FILE.read_text().strip()
+    except OSError:
+        return "unknown"
+
+
+def _log_startup_banner(settings: Settings, version: str) -> None:
+    sep = "=" * 56
+    logger.info(sep)
+    logger.info("TeleAgent v%s", version)
+    logger.info("  Platform : %s", settings.platform)
+    logger.info("  AI       : %s", settings.ai.ai_cli)
+    logger.info("  Repo     : %s", settings.github.github_repo)
+    logger.info("  Branch   : %s", settings.github.branch)
+    logger.info("  Python   : %s", sys.version.split()[0])
+    logger.info("  PID      : %s", os.getpid())
+    logger.info(sep)
 
 
 def _validate_config(settings: Settings) -> None:
@@ -57,6 +82,7 @@ async def _startup_telegram(settings: Settings, backend, start_time: float) -> N
             text=ready_msg,
             parse_mode="Markdown",
         )
+        _HEALTH_FILE.touch()
         await app.start()
         await app.updater.start_polling(drop_pending_updates=True)
         logger.info("Telegram bot is running. Press Ctrl+C to stop.")
@@ -79,6 +105,7 @@ async def _startup_slack(settings: Settings, backend, start_time: float) -> None
     signal.signal(signal.SIGTERM, _handle_sigterm)
 
     await bot.send_ready_message()
+    _HEALTH_FILE.touch()
     logger.info("Slack bot is running. Press Ctrl+C to stop.")
     await bot.run_async()
 
@@ -113,12 +140,15 @@ async def startup(settings: Settings) -> None:
 
 
 def main() -> None:
+    version = _read_version()
     try:
         settings = Settings.load()
         _validate_config(settings)
     except Exception as exc:
         logger.error("Configuration error: %s", exc)
         sys.exit(1)
+
+    _log_startup_banner(settings, version)
 
     try:
         asyncio.run(startup(settings))

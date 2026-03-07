@@ -45,6 +45,7 @@ RUN pip install --no-cache-dir --user -r requirements.txt
 
 # App source
 COPY --chown=botuser:botuser src/ src/
+COPY --chown=botuser:botuser VERSION .
 
 # Repo clone destination + persistent data
 VOLUME /repo
@@ -53,6 +54,6 @@ VOLUME /data
 ENV PYTHONUNBUFFERED=1
 
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-  CMD python -c "import src.config; import sys; sys.exit(0)"
+  CMD test -f /tmp/healthy
 
 CMD ["python", "-m", "src.main"]
