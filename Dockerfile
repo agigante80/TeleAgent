@@ -32,16 +32,15 @@ RUN npm install -g @github/copilot@0.0.421
 # OpenAI Codex CLI — pinned version (update via Dependabot)
 RUN npm install -g @openai/codex@0.111.0
 
-# Python dependencies
+# Python dependencies — installed as root so packages are system-wide and
+# accessible regardless of which UID the container runs as at runtime.
 WORKDIR /app
 COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Non-root user — created before pip install so pip runs as non-root
+# Non-root user for runtime
 RUN useradd -m botuser && mkdir -p /repo /data && chown botuser:botuser /repo /app /data
 USER botuser
-ENV PATH="/home/botuser/.local/bin:$PATH"
-
-RUN pip install --no-cache-dir --user -r requirements.txt
 
 # App source
 COPY --chown=botuser:botuser src/ src/
