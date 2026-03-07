@@ -6,9 +6,18 @@ from typing import Literal
 class TelegramConfig(BaseSettings):
     model_config = SettingsConfigDict(populate_by_name=True, extra="ignore")
 
-    bot_token: str = Field(alias="TG_BOT_TOKEN")
-    chat_id: str = Field(alias="TG_CHAT_ID")
+    bot_token: str = Field(default="", alias="TG_BOT_TOKEN")
+    chat_id: str = Field(default="", alias="TG_CHAT_ID")
     allowed_users: list[int] = Field(default=[], alias="ALLOWED_USERS")
+
+
+class SlackConfig(BaseSettings):
+    model_config = SettingsConfigDict(extra="ignore")
+
+    slack_bot_token: str = ""   # SLACK_BOT_TOKEN (xoxb-...)
+    slack_app_token: str = ""   # SLACK_APP_TOKEN (xapp-...) for Socket Mode
+    slack_channel_id: str = ""  # SLACK_CHANNEL_ID — restrict to one channel (optional)
+    allowed_users: list[str] = Field(default=[], alias="SLACK_ALLOWED_USERS")  # Slack user IDs (e.g. U0123456)
 
 
 class GitHubConfig(BaseSettings):
@@ -43,6 +52,13 @@ class AIConfig(BaseSettings):
     # Codex
     codex_model: str = "o3"
 
+    # CLI options passthrough — passed verbatim to the backend CLI subprocess.
+    # Empty (default) = each backend applies its own full-auto defaults:
+    #   copilot → --allow-all  |  codex → --approval-mode full-auto
+    # Non-empty = replaces the defaults entirely; must include full-auto flags if needed.
+    # Ignored (with a warning) when AI_CLI=api (no subprocess).
+    ai_cli_opts: str = ""
+
     # Generic / api backend
     ai_provider: Literal["openai", "anthropic", "ollama", "openai-compat", ""] = ""
     ai_api_key: str = ""
@@ -61,11 +77,13 @@ class VoiceConfig(BaseSettings):
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore")
 
+    platform: Literal["telegram", "slack"] = "telegram"
     telegram: TelegramConfig = Field(default_factory=TelegramConfig)
     github: GitHubConfig = Field(default_factory=GitHubConfig)
     bot: BotConfig = Field(default_factory=BotConfig)
     ai: AIConfig = Field(default_factory=AIConfig)
     voice: VoiceConfig = Field(default_factory=VoiceConfig)
+    slack: SlackConfig = Field(default_factory=SlackConfig)
 
     @classmethod
     def load(cls) -> "Settings":
@@ -75,6 +93,7 @@ class Settings(BaseSettings):
             bot=BotConfig(),
             ai=AIConfig(),
             voice=VoiceConfig(),
+            slack=SlackConfig(),
         )
 
 

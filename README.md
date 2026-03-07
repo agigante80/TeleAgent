@@ -1,18 +1,19 @@
 # TeleAgent
 
-> **One Docker container per project.** Telegram is the interface to a pluggable AI CLI — GitHub Copilot, OpenAI Codex, or any OpenAI-compatible / Anthropic API.
+> **One Docker container per project.** Telegram or Slack is the interface to a pluggable AI CLI — GitHub Copilot, OpenAI Codex, or any OpenAI-compatible / Anthropic API.
 
-Send messages to your Telegram bot and the AI responds in the context of your GitHub repository. No context switching, no browser — just chat.
+Send messages to your bot and the AI responds in the context of your GitHub repository. No context switching, no browser — just chat.
 
 ---
 
 ## Features
 
 - 🤖 **Pluggable AI backends** — Copilot CLI, Codex CLI, OpenAI, Anthropic, Ollama
+- 💬 **Multi-platform** — Telegram or Slack (Socket Mode); choose via `PLATFORM=telegram|slack`
 - 📁 **Repo-aware** — clones your project on startup; AI runs in that directory
 - 💬 **Conversation history** — per-chat SQLite store, injected as context
 - ⚡ **Streaming responses** — message updates as the AI types (configurable)
-- 🔀 **Multi-turn sessions** — Copilot PTY session and direct API maintain state natively
+- 🔀 **Multi-turn sessions** — SQLite history injected for stateless backends; Direct API maintains native state
 - 🐳 **One container per project** — fully isolated, all config via env vars
 - 🔒 **Secure** — non-root container, allowlist by chat/user ID, confirmation for destructive shell commands
 
@@ -35,7 +36,7 @@ A Docker image is published automatically to GitHub Container Registry on every 
 
 | Branch/event | Image tag |
 |---|---|
-| Push to `develop` | `ghcr.io/agigante80/teleagent:develop` |
+| Push to `develop` or `development` | `ghcr.io/agigante80/teleagent:develop` + `ghcr.io/agigante80/teleagent:development` |
 | Push to `main` | `ghcr.io/agigante80/teleagent:latest` + `ghcr.io/agigante80/teleagent:main` |
 | Version release | `ghcr.io/agigante80/teleagent:X.Y.Z` |
 
@@ -96,12 +97,30 @@ Destructive shell commands (`push`, `merge`, `rm`, `force`) require inline confi
 
 Copy `.env.example` — it documents every variable with examples.
 
-### Required
+### Platform
+
+| Variable | Default | Description |
+|---|---|---|
+| `PLATFORM` | `telegram` | `telegram` \| `slack` — selects the messaging platform |
+
+### Required — Telegram (`PLATFORM=telegram`)
 
 | Variable | Description |
 |---|---|
 | `TG_BOT_TOKEN` | Bot token from [@BotFather](https://t.me/BotFather) |
 | `TG_CHAT_ID` | Your Telegram chat/group ID — bot ignores all others |
+
+### Required — Slack (`PLATFORM=slack`)
+
+| Variable | Description |
+|---|---|
+| `SLACK_BOT_TOKEN` | Bot OAuth token (`xoxb-…`) from your Slack App |
+| `SLACK_APP_TOKEN` | App-level token (`xapp-…`) for Socket Mode |
+
+### Shared / Always Required
+
+| Variable | Description |
+|---|---|
 | `GITHUB_REPO_TOKEN` | PAT with `repo` scope — used for git clone/push |
 | `GITHUB_REPO` | `owner/repo` format |
 
@@ -117,6 +136,7 @@ Copy `.env.example` — it documents every variable with examples.
 | `AI_MODEL` | — | Model for `api` backend |
 | `AI_BASE_URL` | — | Base URL for Ollama or compatible endpoints |
 | `CODEX_MODEL` | `o3` | Model for `codex` backend |
+| `AI_CLI_OPTS` | — | Raw options passed verbatim to the CLI subprocess. **Empty (default) = full-auto per backend** (Copilot: `--allow-all`; Codex: `--approval-mode full-auto`). **When set, replaces the defaults entirely** — must include full-auto flags if still needed (e.g. `--allow-all --allow-url github.com`). Ignored (with a warning) when `AI_CLI=api`. |
 
 ### Bot Behaviour
 
@@ -127,14 +147,46 @@ Copy `.env.example` — it documents every variable with examples.
 | `HISTORY_ENABLED` | `true` | Set `false` to disable conversation history storage |
 | `STREAM_RESPONSES` | `true` | Set `false` to wait for full response before sending |
 | `STREAM_THROTTLE_SECS` | `1.0` | Seconds between streaming message edits |
+| `CONFIRM_DESTRUCTIVE` | `true` | Set `false` to skip confirmation for destructive shell commands |
+| `SKIP_CONFIRM_KEYWORDS` | — | Comma-separated keywords that bypass destructive confirmation (e.g. `push,rm`) |
+
+### Voice Transcription
+
+| Variable | Default | Description |
+|---|---|---|
+| `WHISPER_PROVIDER` | `none` | `none` \| `openai` — enables Telegram voice message transcription |
+| `WHISPER_API_KEY` | — | API key for Whisper (falls back to `AI_API_KEY` when provider is `openai`) |
+| `WHISPER_MODEL` | `whisper-1` | Whisper model name |
 
 ### Optional
 
 | Variable | Description |
 |---|---|
-| `ALLOWED_USERS` | Comma-separated Telegram user IDs (extra allowlist) |
+| `ALLOWED_USERS` | Comma-separated Telegram user IDs (extra allowlist, Telegram only) |
+| `SLACK_CHANNEL_ID` | Restrict Slack bot to a single channel (e.g. `C0123456789`) |
+| `SLACK_ALLOWED_USERS` | JSON array of Slack user IDs allowed to use the bot (e.g. `["U111","U222"]`) |
 | `BRANCH` | Git branch to clone (default: `main`) |
 | `REPO_HOST_PATH` | Host directory to bind-mount as `/repo` — persists across rebuilds |
+
+---
+
+## Slack Setup
+
+> Full step-by-step guide: **[docs/features/slack-setup.md](docs/features/slack-setup.md)**
+
+Quick summary:
+
+1. [api.slack.com/apps](https://api.slack.com/apps) → **Create New App** → **From scratch**
+2. **OAuth & Permissions** → Bot Token Scopes: `chat:write`, `channels:history`, `groups:history`, `im:history`, `mpim:history`, `files:read`
+3. **Socket Mode** → Enable → Generate token (`connections:write` scope) → `SLACK_APP_TOKEN` (`xapp-…`)
+4. **Event Subscriptions** → Enable → Subscribe to bot events: `message.channels`, `message.groups`, `message.im`, `message.mpim` → Save
+5. **OAuth & Permissions** → **Install to Workspace** → copy Bot OAuth Token → `SLACK_BOT_TOKEN` (`xoxb-…`)
+6. In Slack: `/invite @YourBotName` in a channel → copy Channel ID → `SLACK_CHANNEL_ID`
+7. Set `PLATFORM=slack` in `.env` and restart
+
+> ⚠️ After any scope or event change, **reinstall the app** (step 5) to get a fresh token.
+
+> ⚠️ **Do not use `/` prefix in Slack** — Slack intercepts `/cmd` as a native slash command. Use `ta cmd` instead (`ta help`, `ta sync`, etc.).
 
 ---
 

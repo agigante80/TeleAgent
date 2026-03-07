@@ -1,11 +1,12 @@
 """
 Copilot CLI session using non-interactive subprocess mode (-p flag).
-Each query spawns `copilot -p <prompt> --allow-all` as a subprocess.
+Each query spawns `copilot -p <prompt> [opts|--allow-all]` as a subprocess.
 This avoids PTY/TUI complexity and the interactive folder-trust dialog.
 """
 import asyncio
 import logging
 import re
+import shlex
 from collections.abc import AsyncGenerator
 
 from src.ai.adapter import SubprocessMixin
@@ -20,14 +21,17 @@ _STATS_RE = re.compile(r"\n\nTotal usage est:.*", re.DOTALL)
 
 
 class CopilotSession(SubprocessMixin):
-    def __init__(self, model: str = "", env: dict | None = None) -> None:
+    def __init__(self, model: str = "", env: dict | None = None, opts: str = "") -> None:
         self._model = model
         self._env = env
+        self._opts = opts
 
     def _build_cmd(self, prompt: str) -> list[str]:
-        args = ["copilot", "-p", prompt, "--allow-all"]
+        args = ["copilot", "-p", prompt]
         if self._model:
             args += ["--model", self._model]
+        # Empty opts → full-auto default; non-empty → verbatim (replaces defaults)
+        args += shlex.split(self._opts) if self._opts else ["--allow-all"]
         return args
 
     async def send(self, prompt: str) -> str:
