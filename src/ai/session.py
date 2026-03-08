@@ -37,7 +37,7 @@ class CopilotSession(SubprocessMixin):
     async def send(self, prompt: str) -> str:
         try:
             proc = await self._spawn(self._build_cmd(prompt), self._env)
-            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=TIMEOUT)
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=TIMEOUT)
         except asyncio.TimeoutError:
             try:
                 proc.kill()  # type: ignore[possibly-undefined]
@@ -47,6 +47,10 @@ class CopilotSession(SubprocessMixin):
         except Exception as exc:
             logger.exception("Copilot subprocess error")
             return f"⚠️ Session error: {exc}"
+        if proc.returncode != 0:
+            err = stderr.decode().strip() or stdout.decode().strip()
+            logger.error("copilot CLI error (rc=%d): %s", proc.returncode, err)
+            return f"⚠️ Copilot error (rc={proc.returncode}):\n{err}"
         return _strip_stats(stdout.decode())
 
     async def stream(self, prompt: str) -> AsyncGenerator[str, None]:
@@ -89,6 +93,9 @@ class CopilotSession(SubprocessMixin):
             clean = _strip_stats(buf)
             if clean:
                 yield clean
+        if proc.returncode != 0:
+            logger.error("copilot CLI stream error (rc=%d)", proc.returncode)
+            yield f"\n⚠️ Copilot exited with rc={proc.returncode}"
 
     def close(self) -> None:
         pass  # No persistent process to clean up

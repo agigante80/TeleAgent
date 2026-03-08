@@ -102,6 +102,7 @@ class TestSend:
         raw = b"Hello!\n\nTotal usage est:        1 Premium request\nAPI time: 1s"
         proc = MagicMock()
         proc.communicate = AsyncMock(return_value=(raw, b""))
+        proc.returncode = 0
         with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)):
             result = await CopilotSession().send("hi")
         assert result == "Hello!"
