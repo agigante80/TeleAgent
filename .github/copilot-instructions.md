@@ -1,6 +1,14 @@
 # Copilot Instructions
 
-## Commands
+## Repository Identity
+
+**GitHub owner**: `agigante80`
+**Repository**: `agigante80/AgentGate`
+**Default branch**: `main` (production) | `develop` (active development)
+
+When using GitHub MCP tools, always use `owner: "agigante80"` and `repo: "AgentGate"`.
+
+
 
 ```bash
 # Lint
