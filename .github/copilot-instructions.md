@@ -8,7 +8,7 @@
 
 When using GitHub MCP tools, always use `owner: "agigante80"` and `repo: "AgentGate"`.
 
-
+## Commands
 
 ```bash
 # Lint
@@ -45,12 +45,10 @@ AgentGate is an async Python bot (Telegram **or** Slack) that acts as a gateway 
 - `adapter.py` defines the `AICLIBackend` ABC: `send()`, `stream()`, `clear_history()`, and the `is_stateful` class-level flag. Also defines `SubprocessMixin` for backends that spawn child processes in `REPO_DIR`.
 - `factory.py` selects the concrete backend based on the `AI_CLI` env var (`copilot` | `codex` | `api`).
 - `copilot.py` + `session.py` — **stateless** `CopilotBackend` (`is_stateful = False`). `CopilotSession` spawns `copilot -p <prompt> --allow-all` as a subprocess; the bot provides history via context injection.
-- `codex.py` — stateful Codex CLI backend.
-- `direct.py` — stateless `DirectAPIBackend` for OpenAI / Anthropic / Ollama.
+- `codex.py` — **stateful** `CodexBackend` (`is_stateful = True`). Manages its own conversation state via the Codex CLI subprocess.
+- `direct.py` — **stateful** `DirectAPIBackend` (`is_stateful = True`) for OpenAI / Anthropic / Ollama. Maintains a `self._messages` list natively.
 
 **Stateful vs stateless backends** (`src/bot.py → forward_to_ai`): if `backend.is_stateful` is `True`, the raw prompt is sent directly. If `False`, the last 10 history exchanges from SQLite are prepended via `history.build_context()` before sending.
-
-**Bot handlers** (`src/bot.py`): all Telegram handlers live in `_BotHandlers`. Every handler method is guarded by `@_requires_auth` (checks `TG_CHAT_ID` and optional `ALLOWED_USERS`). Utility commands use the configurable prefix (default `gate`); everything else is forwarded to the AI.
 
 **CI/CD** (`.github/workflows/ci-cd.yml`): single unified pipeline. Jobs: `version` → `lint` + `test` (parallel) → `docker-publish` + `security-scan` → `release` → `summary`. On `develop`: publishes `:develop` Docker tag. On `main`: version-bump check, publishes `:latest`, creates a GitHub Release. Multi-platform builds (amd64 + arm64). `workflow_dispatch` supports `skip_tests` and `skip_docker_publish` inputs.
 

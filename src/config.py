@@ -18,6 +18,7 @@ class SlackConfig(BaseSettings):
     slack_app_token: str = ""   # SLACK_APP_TOKEN (xapp-...) for Socket Mode
     slack_channel_id: str = ""  # SLACK_CHANNEL_ID — restrict to one channel (optional)
     allowed_users: list[str] = Field(default=[], alias="SLACK_ALLOWED_USERS")  # Slack user IDs (e.g. U0123456)
+    trusted_agent_bot_ids: list[str] = Field(default=[], alias="TRUSTED_AGENT_BOT_IDS")  # Bot IDs of trusted AgentGate agents (e.g. B0123456) for agent-to-agent messaging
 
 
 class GitHubConfig(BaseSettings):
@@ -46,6 +47,7 @@ class BotConfig(BaseSettings):
     confirm_destructive: bool = True  # Set CONFIRM_DESTRUCTIVE=false to skip confirmation prompts
     skip_confirm_keywords: list[str] = []  # e.g. SKIP_CONFIRM_KEYWORDS=push,rm — always bypassed
     image_tag: str = ""  # IMAGE_TAG — set by docker-compose to show "latest" or "development" in ready msg
+    prefix_only: bool = False  # PREFIX_ONLY=true: ignore messages that don't start with the bot prefix (for multi-agent Slack)
 
 
 class AIConfig(BaseSettings):
@@ -62,6 +64,11 @@ class AIConfig(BaseSettings):
     # Non-empty = replaces the defaults entirely; must include full-auto flags if needed.
     # Ignored (with a warning) when AI_CLI=api (no subprocess).
     ai_cli_opts: str = ""
+
+    # System prompt file — path to a markdown file loaded as the system message.
+    # Used by the api backend (DirectAPIBackend). Ignored by copilot and codex backends.
+    # Useful in multi-agent setups where each container loads its own skills file.
+    system_prompt_file: str = ""  # e.g. SYSTEM_PROMPT_FILE=/skills/sec-agent.md
 
     # Generic / api backend
     ai_provider: Literal["openai", "anthropic", "ollama", "openai-compat", ""] = ""

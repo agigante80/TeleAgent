@@ -165,10 +165,27 @@ class SlackBot:
         channel = event.get("channel", "")
         user = event.get("user", "")
         text = (event.get("text") or "").strip()
+        bot_id = event.get("bot_id", "")
 
-        # Ignore bot messages and message edits
-        if event.get("subtype") or event.get("bot_id"):
+        # Ignore message edits
+        if event.get("subtype"):
             return
+
+        # Trusted agent messages (agent-to-agent): only process prefix commands, never AI pipeline
+        if bot_id:
+            trusted = self._settings.slack.trusted_agent_bot_ids
+            if bot_id not in trusted:
+                return
+            p = self._p
+            lower = text.lower()
+            if lower.startswith(f"{p} ") or lower == p:
+                parts = text.split(maxsplit=2)
+                sub = parts[1].lower() if len(parts) > 1 else ""
+                args_str = parts[2] if len(parts) > 2 else ""
+                args = args_str.split() if args_str else []
+                await self._dispatch(sub, args, say, client, channel)
+            return
+
         if not self._is_allowed(channel, user):
             return
 
@@ -189,6 +206,8 @@ class SlackBot:
             args_str = parts[2] if len(parts) > 2 else ""
             args = args_str.split() if args_str else []
             await self._dispatch(sub, args, say, client, channel)
+        elif self._settings.bot.prefix_only:
+            return  # Silently ignore unprefixed messages (PREFIX_ONLY=true)
         else:
             await self._run_ai_pipeline(say, client, text, channel)
 

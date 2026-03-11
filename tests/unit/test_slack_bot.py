@@ -31,6 +31,8 @@ def _make_settings(
     slack_bot_token="xoxb-test",
     slack_app_token="xapp-test",
     prefix="gate",
+    prefix_only=False,
+    trusted_agent_bot_ids=None,
 ):
     bot = MagicMock(spec=BotConfig)
     bot.bot_cmd_prefix = prefix
@@ -40,11 +42,13 @@ def _make_settings(
     bot.stream_throttle_secs = stream_throttle
     bot.confirm_destructive = confirm_destructive
     bot.skip_confirm_keywords = skip_confirm_keywords or []
+    bot.prefix_only = prefix_only
     slack = MagicMock(spec=SlackConfig)
     slack.slack_bot_token = slack_bot_token
     slack.slack_app_token = slack_app_token
     slack.slack_channel_id = channel_id
     slack.allowed_users = allowed_users or []
+    slack.trusted_agent_bot_ids = trusted_agent_bot_ids or []
     gh = MagicMock(spec=GitHubConfig)
     gh.github_repo = "owner/repo"
     gh.branch = "main"
@@ -181,6 +185,53 @@ class TestCommandRouting:
         event = _make_event(text="gate sync")
         event["bot_id"] = "BBOT123"
         await bot._on_message(event, say, client)
+        say.assert_not_awaited()
+
+    async def test_prefix_only_ignores_unprefixed_messages(self):
+        backend = _make_backend(response="AI response")
+        bot = _make_bot(backend=backend, settings=_make_settings(prefix_only=True))
+        say = _make_say()
+        client = _make_client()
+        await bot._on_message(_make_event(text="what is 2+2?"), say, client)
+        backend.send.assert_not_awaited()
+
+    async def test_prefix_only_still_handles_prefixed_commands(self):
+        bot = _make_bot(settings=_make_settings(prefix_only=True))
+        say = _make_say()
+        client = _make_client()
+        with patch("src.executor.run_shell", AsyncMock(return_value="ok")), \
+             patch("src.executor.is_destructive", return_value=False):
+            await bot._on_message(_make_event(text="gate run echo hi"), say, client)
+        say.assert_awaited()
+
+    async def test_trusted_agent_message_triggers_prefix_command(self):
+        bot = _make_bot(settings=_make_settings(trusted_agent_bot_ids=["BTRUSTED"]))
+        say = _make_say()
+        client = _make_client()
+        event = _make_event(text="gate help")
+        event["bot_id"] = "BTRUSTED"
+        await bot._on_message(event, say, client)
+        say.assert_awaited()
+
+    async def test_trusted_agent_message_does_not_trigger_ai(self):
+        backend = _make_backend(response="AI response")
+        bot = _make_bot(backend=backend, settings=_make_settings(trusted_agent_bot_ids=["BTRUSTED"]))
+        say = _make_say()
+        client = _make_client()
+        event = _make_event(text="some unprefixed message")
+        event["bot_id"] = "BTRUSTED"
+        await bot._on_message(event, say, client)
+        backend.send.assert_not_awaited()
+
+    async def test_untrusted_bot_messages_still_ignored(self):
+        backend = _make_backend(response="AI response")
+        bot = _make_bot(backend=backend, settings=_make_settings(trusted_agent_bot_ids=["BTRUSTED"]))
+        say = _make_say()
+        client = _make_client()
+        event = _make_event(text="gate sync")
+        event["bot_id"] = "BUNTRUSTED"
+        await bot._on_message(event, say, client)
+        backend.send.assert_not_awaited()
         say.assert_not_awaited()
 
 

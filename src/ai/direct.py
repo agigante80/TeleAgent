@@ -9,17 +9,24 @@ logger = logging.getLogger(__name__)
 class DirectAPIBackend(AICLIBackend):
     is_stateful = True  # self._messages maintains native chat history
 
-    def __init__(self, provider: str, api_key: str, model: str, base_url: str = "") -> None:
+    def __init__(self, provider: str, api_key: str, model: str, base_url: str = "", system_prompt: str = "") -> None:
         self._provider = provider
         self._api_key = api_key
         self._model = model
         self._base_url = base_url
+        self._system_prompt = system_prompt
         self._messages: list[dict] = []
         # Cached clients — created lazily, reused across calls
         self._openai_client = None
         self._anthropic_client = None
 
     # ── Public API ───────────────────────────────────────────────────────
+
+    def _build_messages(self) -> list[dict]:
+        """Return messages with system prompt prepended for OpenAI-style APIs."""
+        if self._system_prompt:
+            return [{"role": "system", "content": self._system_prompt}] + self._messages
+        return self._messages
 
     async def send(self, prompt: str) -> str:
         self._messages.append({"role": "user", "content": prompt})
@@ -80,7 +87,7 @@ class DirectAPIBackend(AICLIBackend):
         client = self._get_openai_client()
         response = await client.chat.completions.create(
             model=self._model,
-            messages=self._messages,
+            messages=self._build_messages(),
         )
         return response.choices[0].message.content or ""
 
@@ -88,7 +95,7 @@ class DirectAPIBackend(AICLIBackend):
         client = self._get_openai_client()
         async with client.chat.completions.stream(
             model=self._model,
-            messages=self._messages,
+            messages=self._build_messages(),
         ) as stream:
             async for event in stream:
                 chunk = event.choices[0].delta.content if event.choices else None
@@ -99,19 +106,25 @@ class DirectAPIBackend(AICLIBackend):
 
     async def _anthropic_send(self) -> str:
         client = self._get_anthropic_client()
-        message = await client.messages.create(
-            model=self._model,
-            max_tokens=4096,
-            messages=self._messages,
-        )
+        kwargs: dict = {
+            "model": self._model,
+            "max_tokens": 4096,
+            "messages": self._messages,
+        }
+        if self._system_prompt:
+            kwargs["system"] = self._system_prompt
+        message = await client.messages.create(**kwargs)
         return message.content[0].text if message.content else ""
 
     async def _anthropic_stream(self) -> AsyncGenerator[str, None]:
         client = self._get_anthropic_client()
-        async with client.messages.stream(
-            model=self._model,
-            max_tokens=4096,
-            messages=self._messages,
-        ) as stream:
+        kwargs: dict = {
+            "model": self._model,
+            "max_tokens": 4096,
+            "messages": self._messages,
+        }
+        if self._system_prompt:
+            kwargs["system"] = self._system_prompt
+        async with client.messages.stream(**kwargs) as stream:
             async for chunk in stream.text_stream:
                 yield chunk

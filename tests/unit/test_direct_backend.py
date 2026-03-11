@@ -101,3 +101,70 @@ class TestStream:
 
         assert chunks == ["Hello", " world"]
         assert backend._messages[-1]["content"] == "Hello world"
+
+
+class TestSystemPrompt:
+    def test_system_prompt_stored(self):
+        backend = DirectAPIBackend(provider="openai", api_key="sk-test", model="gpt-4o", system_prompt="You are a helpful assistant.")
+        assert backend._system_prompt == "You are a helpful assistant."
+
+    def test_no_system_prompt_by_default(self):
+        backend = _make_backend()
+        assert backend._system_prompt == ""
+
+    def test_build_messages_prepends_system(self):
+        backend = DirectAPIBackend(provider="openai", api_key="sk-test", model="gpt-4o", system_prompt="You are a security expert.")
+        backend._messages = [{"role": "user", "content": "hello"}]
+        msgs = backend._build_messages()
+        assert msgs[0] == {"role": "system", "content": "You are a security expert."}
+        assert msgs[1] == {"role": "user", "content": "hello"}
+
+    def test_build_messages_without_system_prompt(self):
+        backend = _make_backend()
+        backend._messages = [{"role": "user", "content": "hello"}]
+        msgs = backend._build_messages()
+        assert msgs == [{"role": "user", "content": "hello"}]
+
+    async def test_openai_send_includes_system_message(self):
+        backend = DirectAPIBackend(provider="openai", api_key="sk-test", model="gpt-4o", system_prompt="Be concise.")
+        backend._messages = [{"role": "user", "content": "test"}]
+        mock_response = MagicMock()
+        mock_response.choices[0].message.content = "short reply"
+        mock_client = AsyncMock()
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+        backend._openai_client = mock_client
+
+        await backend._openai_send()
+
+        call_kwargs = mock_client.chat.completions.create.call_args
+        messages_sent = call_kwargs.kwargs["messages"]
+        assert messages_sent[0]["role"] == "system"
+        assert messages_sent[0]["content"] == "Be concise."
+
+    async def test_anthropic_send_includes_system_param(self):
+        backend = DirectAPIBackend(provider="anthropic", api_key="sk-test", model="claude-3-5-sonnet-20241022", system_prompt="Be helpful.")
+        backend._messages = [{"role": "user", "content": "test"}]
+        mock_response = MagicMock()
+        mock_response.content = [MagicMock(text="reply")]
+        mock_client = AsyncMock()
+        mock_client.messages.create = AsyncMock(return_value=mock_response)
+        backend._anthropic_client = mock_client
+
+        await backend._anthropic_send()
+
+        call_kwargs = mock_client.messages.create.call_args
+        assert call_kwargs.kwargs.get("system") == "Be helpful."
+
+    async def test_anthropic_send_no_system_param_when_empty(self):
+        backend = _make_backend("anthropic")
+        backend._messages = [{"role": "user", "content": "test"}]
+        mock_response = MagicMock()
+        mock_response.content = [MagicMock(text="reply")]
+        mock_client = AsyncMock()
+        mock_client.messages.create = AsyncMock(return_value=mock_response)
+        backend._anthropic_client = mock_client
+
+        await backend._anthropic_send()
+
+        call_kwargs = mock_client.messages.create.call_args
+        assert "system" not in call_kwargs.kwargs
