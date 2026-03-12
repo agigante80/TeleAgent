@@ -184,8 +184,9 @@ The fastest way is to use an **app manifest** — one paste creates the app with
 
 ### 2b — After creating each app
 
-1. **Enable Socket Mode** → **Generate an App-Level Token** → name it anything → scope: `connections:write` → copy the token (`xapp-...`)
-2. **Install to workspace** → **Allow** → copy the Bot User OAuth Token (`xoxb-...`)
+1. **Settings → Socket Mode** → enable the toggle
+2. **Settings → Basic Information** → scroll to **App-Level Tokens** → **Generate Token and Scopes** → name it anything → scope: `connections:write` → **Generate** → copy the token (`xapp-...`)
+3. **Install App** → **Install to workspace** → **Allow** → copy the Bot User OAuth Token (`xoxb-...`)
 
 Repeat for all three apps.
 
