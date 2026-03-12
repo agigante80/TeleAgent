@@ -21,7 +21,7 @@ from src import executor, history, repo
 from src.ai import factory as ai_factory
 from src import transcriber as transcriber_mod
 from src.platform.common import thinking_ticker
-from src.ready_msg import build_ready_message, ai_label as _ai_label
+from src.ready_msg import ai_label as _ai_label
 
 logger = logging.getLogger(__name__)
 
