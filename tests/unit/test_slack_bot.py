@@ -43,6 +43,10 @@ def _make_settings(
     bot.confirm_destructive = confirm_destructive
     bot.skip_confirm_keywords = skip_confirm_keywords or []
     bot.prefix_only = prefix_only
+    bot.ai_timeout_secs = 0
+    bot.thinking_slow_threshold_secs = 15
+    bot.thinking_update_secs = 30
+    bot.ai_timeout_warn_secs = 60
     slack = MagicMock(spec=SlackConfig)
     slack.slack_bot_token = slack_bot_token
     slack.slack_app_token = slack_app_token

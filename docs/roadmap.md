@@ -30,4 +30,5 @@ Items ordered by priority. Each item links to a feature doc with full design det
 | 2.7 | Voice transcription — Google Speech-to-Text (`WHISPER_PROVIDER=google`) | [→ features/whisper-google.md](features/whisper-google.md) |
 | 2.8 | Lightweight web dashboard — read-only HTTP status page inside the container | [→ features/web-dashboard.md](features/web-dashboard.md) |
 | 2.9 | Copilot session pre-warming — reduce repeated context-setup overhead | [→ features/copilot-prewarm.md](features/copilot-prewarm.md) |
+| 2.10 | AI response feedback — proactive "Still thinking…" ticker and configurable per-backend timeout | [→ features/ai-response-feedback.md](features/ai-response-feedback.md) |
 

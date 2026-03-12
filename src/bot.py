@@ -1,7 +1,9 @@
+import asyncio
 import functools
 import logging
 import time
 from collections.abc import Callable
+from contextlib import suppress
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -18,6 +20,7 @@ from src.config import Settings, VERSION
 from src import executor, history, repo
 from src.ai import factory as ai_factory
 from src import transcriber as transcriber_mod
+from src.platform.common import thinking_ticker
 from src.ready_msg import build_ready_message, ai_label as _ai_label
 
 logger = logging.getLogger(__name__)
@@ -49,22 +52,58 @@ async def _stream_to_telegram(
     prompt: str,
     max_chars: int,
     throttle_secs: float = 1.0,
+    timeout_secs: int = 0,
+    slow_threshold: int = 15,
+    update_interval: int = 30,
+    warn_before_secs: int = 60,
 ) -> str:
     """Stream AI response into a Telegram message, editing it as chunks arrive."""
     msg = await update.effective_message.reply_text("🤖 Thinking…")
     accumulated = ""
     last_edit = time.monotonic()
+    first_chunk = True
 
-    async for chunk in backend.stream(prompt):
-        accumulated += chunk
-        now = time.monotonic()
-        if now - last_edit >= throttle_secs:
-            display = accumulated[-max_chars:] if len(accumulated) > max_chars else accumulated
-            try:
-                await msg.edit_text(display + " ▌")
-            except Exception:
-                logger.debug("Telegram edit skipped (rate-limited or unchanged)")
-            last_edit = now
+    ticker = asyncio.create_task(
+        thinking_ticker(
+            edit_fn=msg.edit_text,
+            slow_threshold=slow_threshold,
+            update_interval=update_interval,
+            timeout_secs=timeout_secs,
+            warn_before_secs=warn_before_secs,
+        )
+    )
+
+    async def _stream_body() -> None:
+        nonlocal accumulated, last_edit, first_chunk
+        async for chunk in backend.stream(prompt):
+            if first_chunk:
+                ticker.cancel()
+                first_chunk = False
+            accumulated += chunk
+            now = time.monotonic()
+            if now - last_edit >= throttle_secs:
+                display = accumulated[-max_chars:] if len(accumulated) > max_chars else accumulated
+                try:
+                    await msg.edit_text(display + " ▌")
+                except Exception:
+                    logger.debug("Telegram edit skipped (rate-limited or unchanged)")
+                last_edit = now
+
+    try:
+        if timeout_secs > 0:
+            await asyncio.wait_for(_stream_body(), timeout=timeout_secs)
+        else:
+            await _stream_body()
+    except asyncio.TimeoutError:
+        await msg.edit_text(
+            f"⚠️ Stream cancelled after {timeout_secs}s. "
+            "Use /gate status to check for stuck processes."
+        )
+        return ""
+    finally:
+        ticker.cancel()
+        with suppress(asyncio.CancelledError):
+            await ticker
 
     final = accumulated[-max_chars:] if len(accumulated) > max_chars else accumulated
     try:
@@ -129,10 +168,40 @@ class _BotHandlers:
                     update, self._backend, prompt,
                     self._settings.bot.max_output_chars,
                     self._settings.bot.stream_throttle_secs,
+                    timeout_secs=self._settings.bot.ai_timeout_secs,
+                    slow_threshold=self._settings.bot.thinking_slow_threshold_secs,
+                    update_interval=self._settings.bot.thinking_update_secs,
+                    warn_before_secs=self._settings.bot.ai_timeout_warn_secs,
                 )
             else:
                 msg = await update.effective_message.reply_text("🤖 Thinking…")
-                response = await self._backend.send(prompt)
+                cfg = self._settings.bot
+                ticker = asyncio.create_task(
+                    thinking_ticker(
+                        edit_fn=msg.edit_text,
+                        slow_threshold=cfg.thinking_slow_threshold_secs,
+                        update_interval=cfg.thinking_update_secs,
+                        timeout_secs=cfg.ai_timeout_secs,
+                        warn_before_secs=cfg.ai_timeout_warn_secs,
+                    )
+                )
+                try:
+                    if cfg.ai_timeout_secs > 0:
+                        response = await asyncio.wait_for(
+                            self._backend.send(prompt), timeout=cfg.ai_timeout_secs
+                        )
+                    else:
+                        response = await self._backend.send(prompt)
+                except asyncio.TimeoutError:
+                    await msg.edit_text(
+                        f"⚠️ Request cancelled after {cfg.ai_timeout_secs}s. "
+                        "Use /gate status to check if the process is stuck."
+                    )
+                    return
+                finally:
+                    ticker.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await ticker
                 response = await executor.summarize_if_long(
                     response, self._settings.bot.max_output_chars, self._backend
                 )

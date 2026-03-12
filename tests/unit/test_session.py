@@ -108,14 +108,16 @@ class TestSend:
         assert result == "Hello!"
 
     @pytest.mark.asyncio
-    async def test_send_timeout_returns_error(self, tmp_path, monkeypatch):
+    async def test_send_cancelled_error_kills_proc(self, tmp_path, monkeypatch):
+        """CancelledError inside send() must kill the subprocess and re-raise."""
         monkeypatch.setattr("src.ai.session.REPO_DIR", tmp_path)
         proc = MagicMock()
-        proc.terminate = MagicMock()
-        proc.communicate = AsyncMock(side_effect=asyncio.TimeoutError())
+        proc.kill = MagicMock()
+        proc.communicate = AsyncMock(side_effect=asyncio.CancelledError())
         with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)):
-            result = await CopilotSession().send("hi")
-        assert "timed out" in result
+            with pytest.raises(asyncio.CancelledError):
+                await CopilotSession().send("hi")
+        proc.kill.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_send_exception_returns_error(self, tmp_path, monkeypatch):

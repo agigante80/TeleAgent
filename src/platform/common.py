@@ -1,7 +1,41 @@
 """Platform-agnostic helpers shared between Telegram and Slack bots."""
+import asyncio
+import time
+from collections.abc import Awaitable, Callable
+
 from src import history
 from src.ai.adapter import AICLIBackend
 from src.config import Settings
+
+
+async def thinking_ticker(
+    edit_fn: Callable[[str], Awaitable[None]],
+    slow_threshold: int,
+    update_interval: int,
+    timeout_secs: int,
+    warn_before_secs: int,
+) -> None:
+    """Background task: edits the 'Thinking…' placeholder with elapsed time.
+
+    Sleeps for slow_threshold seconds first (quiet for fast responses).
+    After that, edits every update_interval seconds.
+    When timeout is set and remaining time <= warn_before_secs, adds a warning.
+    Cancelled externally when the AI call completes or is timed out.
+    """
+    start = time.monotonic()
+    await asyncio.sleep(slow_threshold)
+    while True:
+        elapsed = int(time.monotonic() - start)
+        if timeout_secs > 0:
+            remaining = timeout_secs - elapsed
+            if remaining <= warn_before_secs:
+                text = f"⏳ Still thinking… ({elapsed}s) — will cancel in {remaining}s"
+            else:
+                text = f"⏳ Still thinking… ({elapsed}s)"
+        else:
+            text = f"⏳ Still thinking… ({elapsed}s)"
+        await edit_fn(text)
+        await asyncio.sleep(update_interval)
 
 
 async def build_prompt(

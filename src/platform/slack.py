@@ -20,14 +20,17 @@ Commands are triggered by messages starting with the bot prefix (default: "gate"
 All other messages are forwarded to the active AI backend.
 Voice/audio file uploads are transcribed and forwarded to the AI.
 """
+import asyncio
 import logging
 import time
+from contextlib import suppress
 
 from src import executor, repo, transcriber as transcriber_mod
 from src.ai import factory as ai_factory
 from src.ai.adapter import AICLIBackend
 from src.config import Settings, VERSION
 from src.platform import common
+from src.platform.common import thinking_ticker
 from src.ready_msg import build_ready_message, ai_label as _ai_label
 
 logger = logging.getLogger(__name__)
@@ -104,18 +107,51 @@ class SlackBot:
         last_edit = time.monotonic()
         throttle = self._settings.bot.stream_throttle_secs
         max_chars = self._settings.bot.max_output_chars
+        cfg = self._settings.bot
+        first_chunk = True
 
-        async for chunk in self._backend.stream(prompt):
-            accumulated += chunk
-            now = time.monotonic()
-            if now - last_edit >= throttle:
-                display = (
-                    accumulated[-max_chars:]
-                    if len(accumulated) > max_chars
-                    else accumulated
-                )
-                await self._edit(client, channel, ts, display + " ▌")
-                last_edit = now
+        ticker = asyncio.create_task(
+            thinking_ticker(
+                edit_fn=lambda text: self._edit(client, channel, ts, text),
+                slow_threshold=cfg.thinking_slow_threshold_secs,
+                update_interval=cfg.thinking_update_secs,
+                timeout_secs=cfg.ai_timeout_secs,
+                warn_before_secs=cfg.ai_timeout_warn_secs,
+            )
+        )
+
+        async def _stream_body() -> None:
+            nonlocal accumulated, last_edit, first_chunk
+            async for chunk in self._backend.stream(prompt):
+                if first_chunk:
+                    ticker.cancel()
+                    first_chunk = False
+                accumulated += chunk
+                now = time.monotonic()
+                if now - last_edit >= throttle:
+                    display = (
+                        accumulated[-max_chars:]
+                        if len(accumulated) > max_chars
+                        else accumulated
+                    )
+                    await self._edit(client, channel, ts, display + " ▌")
+                    last_edit = now
+
+        try:
+            if cfg.ai_timeout_secs > 0:
+                await asyncio.wait_for(_stream_body(), timeout=cfg.ai_timeout_secs)
+            else:
+                await _stream_body()
+        except asyncio.TimeoutError:
+            await self._edit(
+                client, channel, ts,
+                f"⚠️ Stream cancelled after {cfg.ai_timeout_secs}s."
+            )
+            return ""
+        finally:
+            ticker.cancel()
+            with suppress(asyncio.CancelledError):
+                await ticker
 
         final = (
             accumulated[-max_chars:]
@@ -139,7 +175,33 @@ class SlackBot:
             else:
                 resp = await say(_THINKING)
                 ts = resp["ts"]
-                response = await self._backend.send(prompt)
+                cfg = self._settings.bot
+                ticker = asyncio.create_task(
+                    thinking_ticker(
+                        edit_fn=lambda text: self._edit(client, channel, ts, text),
+                        slow_threshold=cfg.thinking_slow_threshold_secs,
+                        update_interval=cfg.thinking_update_secs,
+                        timeout_secs=cfg.ai_timeout_secs,
+                        warn_before_secs=cfg.ai_timeout_warn_secs,
+                    )
+                )
+                try:
+                    if cfg.ai_timeout_secs > 0:
+                        response = await asyncio.wait_for(
+                            self._backend.send(prompt), timeout=cfg.ai_timeout_secs
+                        )
+                    else:
+                        response = await self._backend.send(prompt)
+                except asyncio.TimeoutError:
+                    await self._edit(
+                        client, channel, ts,
+                        f"⚠️ Request cancelled after {cfg.ai_timeout_secs}s."
+                    )
+                    return
+                finally:
+                    ticker.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await ticker
                 response = await executor.summarize_if_long(
                     response, self._settings.bot.max_output_chars, self._backend
                 )

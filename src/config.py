@@ -48,6 +48,10 @@ class BotConfig(BaseSettings):
     skip_confirm_keywords: list[str] = []  # e.g. SKIP_CONFIRM_KEYWORDS=push,rm — always bypassed
     image_tag: str = ""  # IMAGE_TAG — set by docker-compose to show "latest" or "development" in ready msg
     prefix_only: bool = False  # PREFIX_ONLY=true: ignore messages that don't start with the bot prefix (for multi-agent Slack)
+    ai_timeout_secs: int = 360              # Hard timeout for any AI backend (0 = no timeout); env: AI_TIMEOUT_SECS
+    thinking_slow_threshold_secs: int = 15  # Seconds of silence before first "Still thinking…" update; env: THINKING_SLOW_THRESHOLD_SECS
+    thinking_update_secs: int = 30          # Seconds between subsequent elapsed-time updates; env: THINKING_UPDATE_SECS
+    ai_timeout_warn_secs: int = 60          # Seconds before hard timeout to include a cancellation warning; env: AI_TIMEOUT_WARN_SECS
 
 
 class AIConfig(BaseSettings):

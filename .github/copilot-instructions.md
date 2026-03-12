@@ -36,7 +36,7 @@ AgentGate is an async Python bot (Telegram **or** Slack) that acts as a gateway 
 **Config** (`src/config.py`): Pydantic `BaseSettings` split into six sub-configs (`TelegramConfig`, `SlackConfig`, `GitHubConfig`, `BotConfig`, `AIConfig`, `VoiceConfig`). All settings come from env vars. `Settings.load()` constructs them and is the only entry point. `TelegramConfig` fields are optional (default `""`) — validation that they're present happens in `_validate_config()` in `main.py`. Module-level `REPO_DIR` and `DB_PATH` constants are defined here — always import these instead of hardcoding `/repo` or `/data`.
 
 **Platform abstraction** (`src/platform/`):
-- `common.py` — shared helpers used by both bots: `build_prompt()` (injects history for stateless backends), `save_to_history()`, `is_allowed_slack()`.
+- `common.py` — shared helpers used by both bots: `build_prompt()` (injects history for stateless backends), `save_to_history()`, `is_allowed_slack()`, `thinking_ticker()` (async background task that edits the "Thinking…" message with elapsed time; started by both bots during `_run_ai_pipeline()`).
 - `slack.py` — `SlackBot` class using `slack-bolt[async]` in Socket Mode. Message events with prefix parsing (e.g. `gate run`, `gate sync`). Streaming via `client.chat_update(ts=…)`. Confirmation dialogs via Block Kit Actions. Voice via file download with auth header.
 
 **Bot handlers** (`src/bot.py`): all Telegram handlers live in `_BotHandlers`. Every handler method is guarded by `@_requires_auth` (checks `TG_CHAT_ID` and optional `ALLOWED_USERS`). Utility commands use the configurable prefix (default `gate`); everything else is forwarded to the AI.

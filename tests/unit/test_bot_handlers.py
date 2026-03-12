@@ -32,6 +32,10 @@ def _make_settings(
     bot.confirm_destructive = confirm_destructive
     bot.skip_confirm_keywords = skip_confirm_keywords or []
     bot.image_tag = ""
+    bot.ai_timeout_secs = 0
+    bot.thinking_slow_threshold_secs = 15
+    bot.thinking_update_secs = 30
+    bot.ai_timeout_warn_secs = 60
     gh = MagicMock(spec=GitHubConfig)
     gh.github_repo = "owner/repo"
     gh.branch = "main"

@@ -12,8 +12,6 @@ from collections.abc import AsyncGenerator
 from src.ai.adapter import SubprocessMixin
 from src.config import REPO_DIR  # noqa: F401 — test seam for monkeypatching
 
-TIMEOUT = 180
-
 logger = logging.getLogger(__name__)
 
 # Strip usage stats footer appended by copilot -p to every response
@@ -35,15 +33,17 @@ class CopilotSession(SubprocessMixin):
         return args
 
     async def send(self, prompt: str) -> str:
+        proc = None
         try:
             proc = await self._spawn(self._build_cmd(prompt), self._env)
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=TIMEOUT)
-        except asyncio.TimeoutError:
-            try:
-                proc.kill()  # type: ignore[possibly-undefined]
-            except Exception:
-                pass
-            return f"⚠️ Copilot timed out after {TIMEOUT}s."
+            stdout, stderr = await proc.communicate()
+        except asyncio.CancelledError:
+            if proc is not None:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+            raise
         except Exception as exc:
             logger.exception("Copilot subprocess error")
             return f"⚠️ Session error: {exc}"
