@@ -189,6 +189,8 @@ The fastest way is to use an **app manifest** — one paste creates the app with
 
 Repeat for all three apps.
 
+> ⚠️ **If you already created the app and need to add a scope** (e.g. `users:read`): go to **OAuth & Permissions** → **Bot Token Scopes** → add the scope → then **Install App** → **Install to workspace** → **Allow** to get a fresh token. Update `SLACK_BOT_TOKEN` in your `.env` with the new `xoxb-...` value.
+
 > **Manual setup reference**: If you prefer not to use a manifest, the equivalent manual steps are: Enable Socket Mode, add bot events (`message.channels`, `message.groups`, `message.im`, `message.mpim`) under Event Subscriptions, add bot scopes (`channels:history`, `groups:history`, `im:history`, `mpim:history`, `chat:write`, `files:read`, `users:read`) under OAuth & Permissions, then install to workspace.
 
 ---
