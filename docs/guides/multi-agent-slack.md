@@ -85,15 +85,112 @@ You can customise these files to fit your team. For inspiration, see:
 
 ## Step 2 — Create Slack Apps (repeat for each agent)
 
-1. Go to [https://api.slack.com/apps](https://api.slack.com/apps) → **Create New App** → **From scratch**
-2. Name the app (`GateCode`, `GateSec`, or `GateDocs`)
-3. **Enable Socket Mode** → generate an App-Level Token (`xapp-...`) → scope: `connections:write`
-4. **Event Subscriptions** → Subscribe to bot events: `message.channels`, `message.groups`, `message.im`, `message.mpim`
-5. **OAuth & Permissions** → Bot Token Scopes: `channels:history`, `chat:write`, `files:read`
-6. Install to workspace → copy the Bot User OAuth Token (`xoxb-...`)
-7. Note the bot's **member ID** (starts with `B`) — needed for agent-to-agent requests
+The fastest way is to use an **app manifest** — one paste creates the app with all scopes and events pre-configured.
+
+### 2a — Create the app from a manifest
+
+1. Go to [https://api.slack.com/apps](https://api.slack.com/apps) → **Create New App** → **From an app manifest**
+2. Select your workspace → paste the manifest for each agent below → **Next** → **Create**
+
+**GateCode** (`dev` prefix — Developer agent):
+
+```json
+{
+  "display_information": { "name": "GateCode" },
+  "features": {
+    "bot_user": { "display_name": "GateCode", "always_online": false }
+  },
+  "oauth_config": {
+    "scopes": {
+      "bot": [
+        "channels:history", "groups:history", "im:history", "mpim:history",
+        "chat:write", "files:read"
+      ]
+    }
+  },
+  "settings": {
+    "event_subscriptions": {
+      "bot_events": [
+        "message.channels", "message.groups", "message.im", "message.mpim"
+      ]
+    },
+    "interactivity": { "is_enabled": true },
+    "org_deploy_enabled": false,
+    "socket_mode_enabled": true,
+    "token_rotation_enabled": false
+  }
+}
+```
+
+**GateSec** (`sec` prefix — Security agent):
+
+```json
+{
+  "display_information": { "name": "GateSec" },
+  "features": {
+    "bot_user": { "display_name": "GateSec", "always_online": false }
+  },
+  "oauth_config": {
+    "scopes": {
+      "bot": [
+        "channels:history", "groups:history", "im:history", "mpim:history",
+        "chat:write", "files:read"
+      ]
+    }
+  },
+  "settings": {
+    "event_subscriptions": {
+      "bot_events": [
+        "message.channels", "message.groups", "message.im", "message.mpim"
+      ]
+    },
+    "interactivity": { "is_enabled": true },
+    "org_deploy_enabled": false,
+    "socket_mode_enabled": true,
+    "token_rotation_enabled": false
+  }
+}
+```
+
+**GateDocs** (`docs` prefix — Docs agent):
+
+```json
+{
+  "display_information": { "name": "GateDocs" },
+  "features": {
+    "bot_user": { "display_name": "GateDocs", "always_online": false }
+  },
+  "oauth_config": {
+    "scopes": {
+      "bot": [
+        "channels:history", "groups:history", "im:history", "mpim:history",
+        "chat:write", "files:read"
+      ]
+    }
+  },
+  "settings": {
+    "event_subscriptions": {
+      "bot_events": [
+        "message.channels", "message.groups", "message.im", "message.mpim"
+      ]
+    },
+    "interactivity": { "is_enabled": true },
+    "org_deploy_enabled": false,
+    "socket_mode_enabled": true,
+    "token_rotation_enabled": false
+  }
+}
+```
+
+### 2b — After creating each app
+
+1. **Enable Socket Mode** → **Generate an App-Level Token** → name it anything → scope: `connections:write` → copy the token (`xapp-...`)
+2. **Install to workspace** → **Allow** → copy the Bot User OAuth Token (`xoxb-...`)
+3. Note the bot's **member ID** (Slack profile → More → copy Member ID, starts with `B`) — needed for `TRUSTED_AGENT_BOT_IDS`
 
 Repeat for all three apps.
+
+> **Manual setup reference**: If you prefer not to use a manifest, the equivalent manual steps are: Enable Socket Mode, add bot events (`message.channels`, `message.groups`, `message.im`, `message.mpim`) under Event Subscriptions, add bot scopes (`channels:history`, `groups:history`, `im:history`, `mpim:history`, `chat:write`, `files:read`) under OAuth & Permissions, then install to workspace.
 
 ---
 
