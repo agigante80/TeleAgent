@@ -239,7 +239,65 @@ class TestCommandRouting:
         say.assert_not_awaited()
 
 
-# ── cmd_run ───────────────────────────────────────────────────────────────────
+# ── _resolve_trusted_ids ──────────────────────────────────────────────────────
+
+class TestResolveTrustedIds:
+    async def test_already_bot_id_passthrough(self):
+        """B-prefixed IDs are pre-populated in __init__, no API call needed."""
+        bot = _make_bot(settings=_make_settings(trusted_agent_bot_ids=["BSECAGENT1"]))
+        assert "BSECAGENT1" in bot._trusted_bot_ids
+
+    async def test_name_resolved_via_users_list(self):
+        bot = _make_bot(settings=_make_settings(trusted_agent_bot_ids=["GateSec"]))
+        assert len(bot._trusted_bot_ids) == 0  # not pre-populated (no B-prefix)
+
+        users_list_resp = {
+            "members": [
+                {
+                    "is_bot": True,
+                    "name": "gatesec",
+                    "profile": {"display_name": "GateSec", "bot_id": "BSECRESOLVED"},
+                }
+            ]
+        }
+        bot._app.client.users_list = AsyncMock(return_value=users_list_resp)
+        await bot._resolve_trusted_ids()
+        assert "BSECRESOLVED" in bot._trusted_bot_ids
+
+    async def test_unresolved_name_logs_warning(self):
+        bot = _make_bot(settings=_make_settings(trusted_agent_bot_ids=["UnknownBot"]))
+        bot._app.client.users_list = AsyncMock(return_value={"members": []})
+        await bot._resolve_trusted_ids()
+        assert len(bot._trusted_bot_ids) == 0
+
+    async def test_mixed_names_and_ids(self):
+        bot = _make_bot(
+            settings=_make_settings(trusted_agent_bot_ids=["BDEVAGENT1", "GateSec"])
+        )
+        assert "BDEVAGENT1" in bot._trusted_bot_ids  # pre-populated
+
+        users_list_resp = {
+            "members": [
+                {
+                    "is_bot": True,
+                    "name": "gatesec",
+                    "profile": {"display_name": "GateSec", "bot_id": "BSECRESOLVED"},
+                }
+            ]
+        }
+        bot._app.client.users_list = AsyncMock(return_value=users_list_resp)
+        await bot._resolve_trusted_ids()
+        assert "BDEVAGENT1" in bot._trusted_bot_ids
+        assert "BSECRESOLVED" in bot._trusted_bot_ids
+
+    async def test_api_failure_does_not_raise(self):
+        bot = _make_bot(settings=_make_settings(trusted_agent_bot_ids=["GateSec"]))
+        bot._app.client.users_list = AsyncMock(side_effect=Exception("API error"))
+        await bot._resolve_trusted_ids()  # should not raise
+        assert len(bot._trusted_bot_ids) == 0
+
+
+
 
 class TestCmdRun:
     async def test_run_normal_command(self):

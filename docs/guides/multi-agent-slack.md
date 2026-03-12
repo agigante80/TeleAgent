@@ -53,7 +53,7 @@ You can configure agents to delegate work to each other. For example, after `@Ga
 2. A trusted agent's message that starts with the receiving bot's prefix is processed as a command
 3. The sending agent's skills file instructs the AI when and how to format a delegation request
 
-**Finding a bot's `bot_id`**: Use the `auth.test` one-liner from Step 2b with that bot's `xoxb-` token. The `bot_id` field (starts with `B`) is what `TRUSTED_AGENT_BOT_IDS` expects — not the `U`-prefixed user ID shown in the Slack profile UI.
+**Finding a bot's `bot_id`**: You don't need to. Use the bot's **display name** (e.g. `"GateCode"`) directly in `TRUSTED_AGENT_BOT_IDS` — AgentGate resolves it to the internal `bot_id` automatically at startup via the Slack API. This works even when each agent runs in its own independent container, since `users.list` is workspace-scoped.
 
 **Skills file delegation example** (from `skills/dev-agent.md`):
 > "When your response involves security-sensitive changes, append at the end: `sec review: <description>`"
@@ -104,7 +104,7 @@ The fastest way is to use an **app manifest** — one paste creates the app with
     "scopes": {
       "bot": [
         "channels:history", "groups:history", "im:history", "mpim:history",
-        "chat:write", "files:read"
+        "chat:write", "files:read", "users:read"
       ]
     }
   },
@@ -134,7 +134,7 @@ The fastest way is to use an **app manifest** — one paste creates the app with
     "scopes": {
       "bot": [
         "channels:history", "groups:history", "im:history", "mpim:history",
-        "chat:write", "files:read"
+        "chat:write", "files:read", "users:read"
       ]
     }
   },
@@ -164,7 +164,7 @@ The fastest way is to use an **app manifest** — one paste creates the app with
     "scopes": {
       "bot": [
         "channels:history", "groups:history", "im:history", "mpim:history",
-        "chat:write", "files:read"
+        "chat:write", "files:read", "users:read"
       ]
     }
   },
@@ -186,17 +186,10 @@ The fastest way is to use an **app manifest** — one paste creates the app with
 
 1. **Enable Socket Mode** → **Generate an App-Level Token** → name it anything → scope: `connections:write` → copy the token (`xapp-...`)
 2. **Install to workspace** → **Allow** → copy the Bot User OAuth Token (`xoxb-...`)
-3. Get the bot's **`bot_id`** (starts with `B`) — needed for `TRUSTED_AGENT_BOT_IDS`. Run this with the token you just copied:
-   ```bash
-   curl -s "https://slack.com/api/auth.test" \
-     -H "Authorization: Bearer xoxb-YOUR-TOKEN" \
-     | python3 -m json.tool | grep bot_id
-   ```
-   Record the `bot_id` value — you'll add it to the other agents' `.env` files.
 
 Repeat for all three apps.
 
-> **Manual setup reference**: If you prefer not to use a manifest, the equivalent manual steps are: Enable Socket Mode, add bot events (`message.channels`, `message.groups`, `message.im`, `message.mpim`) under Event Subscriptions, add bot scopes (`channels:history`, `groups:history`, `im:history`, `mpim:history`, `chat:write`, `files:read`) under OAuth & Permissions, then install to workspace.
+> **Manual setup reference**: If you prefer not to use a manifest, the equivalent manual steps are: Enable Socket Mode, add bot events (`message.channels`, `message.groups`, `message.im`, `message.mpim`) under Event Subscriptions, add bot scopes (`channels:history`, `groups:history`, `im:history`, `mpim:history`, `chat:write`, `files:read`, `users:read`) under OAuth & Permissions, then install to workspace.
 
 ---
 
@@ -228,7 +221,7 @@ GITHUB_REPO_TOKEN=ghp_...
 AI_CLI=copilot
 AI_MODEL=claude-sonnet-4-5
 COPILOT_SKILLS_DIRS=/skills
-TRUSTED_AGENT_BOT_IDS=["BSECAGENT","BDOCSAGENT"]   # bot IDs of @GateSec and @GateDocs
+TRUSTED_AGENT_BOT_IDS=["GateSec","GateDocs"]   # display names of @GateSec and @GateDocs
 ```
 
 ```bash
@@ -246,7 +239,7 @@ AI_PROVIDER=anthropic
 AI_API_KEY=sk-ant-...
 AI_MODEL=claude-opus-4-5
 SYSTEM_PROMPT_FILE=/skills/sec-agent.md
-TRUSTED_AGENT_BOT_IDS=["BDEVAGENT","BDOCSAGENT"]   # bot IDs of @GateCode and @GateDocs
+TRUSTED_AGENT_BOT_IDS=["GateCode","GateDocs"]   # display names of @GateCode and @GateDocs
 ```
 
 ```bash
@@ -264,10 +257,12 @@ AI_PROVIDER=openai
 AI_API_KEY=sk-...
 AI_MODEL=gpt-4o
 SYSTEM_PROMPT_FILE=/skills/docs-agent.md
-TRUSTED_AGENT_BOT_IDS=["BDEVAGENT","BSECAGENT"]    # bot IDs of @GateCode and @GateSec
+TRUSTED_AGENT_BOT_IDS=["GateCode","GateSec"]    # display names of @GateCode and @GateSec
 ```
 
 > **Note**: `COPILOT_SKILLS_DIRS` loads skills for the Copilot CLI backend. `SYSTEM_PROMPT_FILE` loads skills for the `api` backend (OpenAI / Anthropic / Ollama). Both read the same markdown file format.
+>
+> **Note**: `TRUSTED_AGENT_BOT_IDS` accepts **display names** (e.g. `"GateCode"`) or raw `B`-prefixed bot IDs. Names are resolved automatically at startup — no manual ID lookup needed.
 >
 > **Note**: `SLACK_CHANNEL_ID` is required — without it the bot cannot post its 🟢 Ready message on startup. Use the channel ID (starts with `C`) from your Slack channel. See [`docs/slack-setup.md`](../slack-setup.md) for details.
 

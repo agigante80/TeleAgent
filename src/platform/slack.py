@@ -78,6 +78,13 @@ class SlackBot:
         self._active_ai: dict[str, float] = {}
         self._confirm_destructive: bool = settings.bot.confirm_destructive
         self._transcriber = _init_transcriber(settings)
+        # Pre-populate entries that already look like bot_ids (B-prefix).
+        # Name-based entries are resolved at startup via _resolve_trusted_ids().
+        import re
+        _bot_id_re = re.compile(r"^B[A-Z0-9]{6,}$")
+        self._trusted_bot_ids: set[str] = {
+            e for e in settings.slack.trusted_agent_bot_ids if _bot_id_re.match(e)
+        }
 
         self._app = AsyncApp(token=settings.slack.slack_bot_token)
         self._register_handlers()
@@ -235,8 +242,7 @@ class SlackBot:
 
         # Trusted agent messages (agent-to-agent): only process prefix commands, never AI pipeline
         if bot_id:
-            trusted = self._settings.slack.trusted_agent_bot_ids
-            if bot_id not in trusted:
+            if bot_id not in self._trusted_bot_ids:
                 return
             p = self._p
             lower = text.lower()
@@ -599,10 +605,51 @@ class SlackBot:
 
     # ── Startup ───────────────────────────────────────────────────────────
 
+    async def _resolve_trusted_ids(self) -> None:
+        """Resolve name-based entries in TRUSTED_AGENT_BOT_IDS to bot_ids via users.list."""
+        import re
+        _bot_id_re = re.compile(r"^B[A-Z0-9]{6,}$")
+        unresolved = [
+            e for e in self._settings.slack.trusted_agent_bot_ids
+            if not _bot_id_re.match(e)
+        ]
+        if not unresolved:
+            return
+
+        try:
+            resp = await self._app.client.users_list()
+            name_to_bot_id: dict[str, str] = {}
+            for member in resp.get("members", []):
+                if not member.get("is_bot"):
+                    continue
+                profile = member.get("profile", {})
+                bot_id = profile.get("bot_id", "")
+                if not bot_id:
+                    continue
+                for key in (profile.get("display_name", ""), member.get("name", "")):
+                    if key:
+                        name_to_bot_id[key.lower()] = bot_id
+        except Exception:
+            logger.exception("Failed to call users.list for trusted agent resolution")
+            return
+
+        for name in unresolved:
+            resolved = name_to_bot_id.get(name.lower())
+            if resolved:
+                self._trusted_bot_ids.add(resolved)
+                logger.info("Resolved trusted agent %r → %s", name, resolved)
+            else:
+                logger.warning(
+                    "Could not resolve trusted agent name %r — not found in workspace."
+                    " Check TRUSTED_AGENT_BOT_IDS and ensure the app is installed.",
+                    name,
+                )
+
     async def run_async(self) -> None:
         """Start the Slack Socket Mode connection."""
         from slack_bolt.adapter.socket_mode.async_handler import AsyncSocketModeHandler
 
+        await self._resolve_trusted_ids()
         handler = AsyncSocketModeHandler(
             self._app, self._settings.slack.slack_app_token
         )
