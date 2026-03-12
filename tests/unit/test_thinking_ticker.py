@@ -2,14 +2,13 @@
 Tests for thinking_ticker() in src/platform/common.py.
 Uses patched asyncio.sleep to avoid real waiting.
 
-Key: patch "src.platform.common.time" (replaces the module reference in common.py's
-namespace) rather than "src.platform.common.time.monotonic" (which would affect asyncio's
-event loop too and consume mock values unexpectedly).
+_clock is passed directly to thinking_ticker (injectable parameter) so tests
+don't need to patch any module-level names at all.
 """
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -28,39 +27,32 @@ def _make_sleep_counter(cancel_after: int):
     return fake_sleep
 
 
-def _make_mock_time(*monotonic_values):
-    """
-    Return a mock time module whose .monotonic() cycles through monotonic_values.
-    Patching "src.platform.common.time" replaces only the name in common.py's
-    namespace — asyncio's event loop keeps its real time reference.
-    """
-    mock_time = MagicMock()
+def _make_clock(*monotonic_values):
+    """Return a callable that steps through monotonic_values, repeating the last."""
     values_iter = iter(monotonic_values)
 
-    def mono():
+    def clock():
         try:
             return next(values_iter)
         except StopIteration:
-            return monotonic_values[-1]  # repeat last value indefinitely
+            return monotonic_values[-1]
 
-    mock_time.monotonic = mono
-    return mock_time
+    return clock
 
 
 async def _run_ticker(edit_fn, slow_threshold, update_interval, timeout_secs,
                       warn_before_secs, cancel_after_sleeps, monotonic_values):
     fake_sleep = _make_sleep_counter(cancel_after_sleeps)
-    mock_time = _make_mock_time(*monotonic_values)
+    clock = _make_clock(*monotonic_values)
     with patch("src.platform.common.asyncio.sleep", side_effect=fake_sleep):
-        with patch("src.platform.common.time", mock_time):
-            task = asyncio.create_task(
-                thinking_ticker(edit_fn, slow_threshold, update_interval,
-                                timeout_secs, warn_before_secs)
-            )
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
+        task = asyncio.create_task(
+            thinking_ticker(edit_fn, slow_threshold, update_interval,
+                            timeout_secs, warn_before_secs, _clock=clock)
+        )
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
 
 async def test_ticker_fires_after_threshold():

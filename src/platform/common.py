@@ -14,6 +14,7 @@ async def thinking_ticker(
     update_interval: int,
     timeout_secs: int,
     warn_before_secs: int,
+    _clock: Callable[[], float] = time.monotonic,
 ) -> None:
     """Background task: edits the 'Thinking…' placeholder with elapsed time.
 
@@ -21,11 +22,14 @@ async def thinking_ticker(
     After that, edits every update_interval seconds.
     When timeout is set and remaining time <= warn_before_secs, adds a warning.
     Cancelled externally when the AI call completes or is timed out.
+
+    _clock is injectable for testing so tests don't need to patch the global
+    time.monotonic (which is also used internally by the asyncio event loop).
     """
-    start = time.monotonic()
+    start = _clock()
     await asyncio.sleep(slow_threshold)
     while True:
-        elapsed = int(time.monotonic() - start)
+        elapsed = int(_clock() - start)
         if timeout_secs > 0:
             remaining = timeout_secs - elapsed
             if remaining <= warn_before_secs:
