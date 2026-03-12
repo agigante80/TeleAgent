@@ -205,7 +205,7 @@ environment:
 | Variable | Description |
 |---|---|
 | `ALLOWED_USERS` | Comma-separated Telegram user IDs (extra allowlist, Telegram only) |
-| `SLACK_CHANNEL_ID` | Restrict Slack bot to a single channel (e.g. `C0123456789`) |
+| `SLACK_CHANNEL_ID` | **Required for the 🟢 Ready message.** Channel where the bot posts its startup notification and listens by default (e.g. `C0123456789`). Without this, the bot starts silently. |
 | `SLACK_ALLOWED_USERS` | JSON array of Slack user IDs allowed to use the bot (e.g. `["U111","U222"]`) |
 | `BRANCH` | Git branch to clone (default: `main`) |
 | `REPO_HOST_PATH` | Host directory to bind-mount as `/repo` — persists across rebuilds |
@@ -223,8 +223,10 @@ Quick summary:
 3. **Socket Mode** → Enable → Generate token (`connections:write` scope) → `SLACK_APP_TOKEN` (`xapp-…`)
 4. **Event Subscriptions** → Enable → Subscribe to bot events: `message.channels`, `message.groups`, `message.im`, `message.mpim` → Save
 5. **OAuth & Permissions** → **Install to Workspace** → copy Bot OAuth Token → `SLACK_BOT_TOKEN` (`xoxb-…`)
-6. In Slack: `/invite @YourBotName` in a channel → copy Channel ID → `SLACK_CHANNEL_ID`
+6. In Slack: `/invite @YourBotName` in a channel → copy Channel ID → set as `SLACK_CHANNEL_ID`
 7. Set `PLATFORM=slack` in `.env` and restart
+
+> ⚠️ `SLACK_CHANNEL_ID` is required for the bot to post its 🟢 Ready message on startup. Without it the bot connects silently and you won't know it's alive.
 
 > ⚠️ After any scope or event change, **reinstall the app** (step 5) to get a fresh token.
 
@@ -494,7 +496,7 @@ environment:
 | Variable | Description |
 |---|---|
 | `ALLOWED_USERS` | Comma-separated Telegram user IDs (extra allowlist, Telegram only) |
-| `SLACK_CHANNEL_ID` | Restrict Slack bot to a single channel (e.g. `C0123456789`) |
+| `SLACK_CHANNEL_ID` | **Required for the 🟢 Ready message.** Channel where the bot posts its startup notification and listens by default (e.g. `C0123456789`). Without this, the bot starts silently. |
 | `SLACK_ALLOWED_USERS` | JSON array of Slack user IDs allowed to use the bot (e.g. `["U111","U222"]`) |
 | `BRANCH` | Git branch to clone (default: `main`) |
 | `REPO_HOST_PATH` | Host directory to bind-mount as `/repo` — persists across rebuilds |
@@ -512,8 +514,10 @@ Quick summary:
 3. **Socket Mode** → Enable → Generate token (`connections:write` scope) → `SLACK_APP_TOKEN` (`xapp-…`)
 4. **Event Subscriptions** → Enable → Subscribe to bot events: `message.channels`, `message.groups`, `message.im`, `message.mpim` → Save
 5. **OAuth & Permissions** → **Install to Workspace** → copy Bot OAuth Token → `SLACK_BOT_TOKEN` (`xoxb-…`)
-6. In Slack: `/invite @YourBotName` in a channel → copy Channel ID → `SLACK_CHANNEL_ID`
+6. In Slack: `/invite @YourBotName` in a channel → copy Channel ID → set as `SLACK_CHANNEL_ID`
 7. Set `PLATFORM=slack` in `.env` and restart
+
+> ⚠️ `SLACK_CHANNEL_ID` is required for the bot to post its 🟢 Ready message on startup. Without it the bot connects silently and you won't know it's alive.
 
 > ⚠️ After any scope or event change, **reinstall the app** (step 5) to get a fresh token.
 
