@@ -65,3 +65,43 @@ class TestBackendFactory:
         cfg = AIConfig()
         backend = create_backend(cfg)
         assert backend._model == "o4"
+
+    def test_api_backend_with_opts_logs_warning(self, monkeypatch, caplog):
+        """AI_CLI_OPTS with AI_CLI=api should log a warning (line 21)."""
+        import logging
+        monkeypatch.setenv("AI_CLI", "api")
+        monkeypatch.setenv("AI_CLI_OPTS", "--some-flag")
+        monkeypatch.setenv("AI_PROVIDER", "openai")
+        monkeypatch.setenv("AI_API_KEY", "sk-test")
+        cfg = AIConfig()
+        with caplog.at_level(logging.WARNING, logger="src.ai.factory"):
+            backend = create_backend(cfg)
+        assert any("AI_CLI_OPTS" in msg for msg in caplog.messages)
+        assert isinstance(backend, DirectAPIBackend)
+
+    def test_api_backend_reads_system_prompt_file(self, monkeypatch, tmp_path):
+        """system_prompt_file contents are read and passed to DirectAPIBackend (lines 27-28)."""
+        prompt_file = tmp_path / "prompt.txt"
+        prompt_file.write_text("You are a helpful assistant.")
+        monkeypatch.setenv("AI_CLI", "api")
+        monkeypatch.setenv("AI_PROVIDER", "openai")
+        monkeypatch.setenv("AI_API_KEY", "sk-test")
+        monkeypatch.setenv("SYSTEM_PROMPT_FILE", str(prompt_file))
+        cfg = AIConfig()
+        backend = create_backend(cfg)
+        assert isinstance(backend, DirectAPIBackend)
+        assert backend._system_prompt == "You are a helpful assistant."
+
+    def test_api_backend_system_prompt_file_oserror_logs_warning(self, monkeypatch, caplog):
+        """OSError reading system_prompt_file logs a warning and uses empty prompt (lines 29-30)."""
+        import logging
+        monkeypatch.setenv("AI_CLI", "api")
+        monkeypatch.setenv("AI_PROVIDER", "openai")
+        monkeypatch.setenv("AI_API_KEY", "sk-test")
+        monkeypatch.setenv("SYSTEM_PROMPT_FILE", "/nonexistent/path/to/prompt.txt")
+        cfg = AIConfig()
+        with caplog.at_level(logging.WARNING, logger="src.ai.factory"):
+            backend = create_backend(cfg)
+        assert isinstance(backend, DirectAPIBackend)
+        assert backend._system_prompt == ""
+        assert any("SYSTEM_PROMPT_FILE" in msg for msg in caplog.messages)
