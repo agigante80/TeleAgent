@@ -49,11 +49,11 @@ You can configure agents to delegate work to each other. For example, after `@Ga
 
 **How it works:**
 
-1. You add each agent's Slack bot user ID to the other agents' `TRUSTED_AGENT_BOT_IDS` list
+1. You add each agent's `bot_id` to the other agents' `TRUSTED_AGENT_BOT_IDS` list
 2. A trusted agent's message that starts with the receiving bot's prefix is processed as a command
 3. The sending agent's skills file instructs the AI when and how to format a delegation request
 
-**Finding a bot's user ID**: In Slack, click the bot's profile → "More" → copy the member ID (starts with `B`).
+**Finding a bot's `bot_id`**: Use the `auth.test` one-liner from Step 2b with that bot's `xoxb-` token. The `bot_id` field (starts with `B`) is what `TRUSTED_AGENT_BOT_IDS` expects — not the `U`-prefixed user ID shown in the Slack profile UI.
 
 **Skills file delegation example** (from `skills/dev-agent.md`):
 > "When your response involves security-sensitive changes, append at the end: `sec review: <description>`"
@@ -186,7 +186,13 @@ The fastest way is to use an **app manifest** — one paste creates the app with
 
 1. **Enable Socket Mode** → **Generate an App-Level Token** → name it anything → scope: `connections:write` → copy the token (`xapp-...`)
 2. **Install to workspace** → **Allow** → copy the Bot User OAuth Token (`xoxb-...`)
-3. Note the bot's **member ID** (Slack profile → More → copy Member ID, starts with `B`) — needed for `TRUSTED_AGENT_BOT_IDS`
+3. Get the bot's **`bot_id`** (starts with `B`) — needed for `TRUSTED_AGENT_BOT_IDS`. Run this with the token you just copied:
+   ```bash
+   curl -s "https://slack.com/api/auth.test" \
+     -H "Authorization: Bearer xoxb-YOUR-TOKEN" \
+     | python3 -m json.tool | grep bot_id
+   ```
+   Record the `bot_id` value — you'll add it to the other agents' `.env` files.
 
 Repeat for all three apps.
 
@@ -194,7 +200,20 @@ Repeat for all three apps.
 
 ---
 
-## Step 3 — Create `.env` Files
+## Step 3 — Add Bots to the Channel
+
+Each bot must be explicitly added to the Slack channel before it can receive messages there.
+
+For each of the three bots:
+
+1. Open the channel in Slack → click the channel name at the top → **Integrations** tab
+2. Click **Add an App** → find and select the bot (GateCode / GateSec / GateDocs)
+
+All three bots should now appear in the channel's integrations list.
+
+---
+
+## Step 4 — Create `.env` Files
 
 ```bash
 # .env.dev
@@ -250,11 +269,11 @@ TRUSTED_AGENT_BOT_IDS=["BDEVAGENT","BSECAGENT"]    # bot IDs of @GateCode and @G
 
 > **Note**: `COPILOT_SKILLS_DIRS` loads skills for the Copilot CLI backend. `SYSTEM_PROMPT_FILE` loads skills for the `api` backend (OpenAI / Anthropic / Ollama). Both read the same markdown file format.
 >
-> **Note**: `SLACK_CHANNEL_ID` is required — without it the bot cannot post its 🟢 Ready message on startup. Use the channel ID (starts with `C`) from Step 7 of the Slack app setup. See [`docs/slack-setup.md`](../slack-setup.md) for details.
+> **Note**: `SLACK_CHANNEL_ID` is required — without it the bot cannot post its 🟢 Ready message on startup. Use the channel ID (starts with `C`) from your Slack channel. See [`docs/slack-setup.md`](../slack-setup.md) for details.
 
 ---
 
-## Step 4 — Docker Compose
+## Step 5 — Docker Compose
 
 ```yaml
 # docker-compose.multi-agent.yml
@@ -307,7 +326,7 @@ Each agent has its own named volumes so histories and repo clones are fully isol
 
 ---
 
-## Step 5 — Launch and Verify
+## Step 6 — Launch and Verify
 
 ```bash
 # Launch all three agents
