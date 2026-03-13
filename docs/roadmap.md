@@ -33,7 +33,7 @@ Items ordered by priority. Each item links to a feature doc with full design det
 | 2.7 | `/gate file` — send files from `/repo` to chat, or receive uploads into `/repo` | [→ features/file-transfer.md](features/file-transfer.md) |
 | 2.8 | Proactive alerts — notify chat on file changes or log keyword matches | [→ features/proactive-alerts.md](features/proactive-alerts.md) |
 | 2.9 | Copilot session pre-warming — reduce repeated context-setup overhead | [→ features/copilot-prewarm.md](features/copilot-prewarm.md) |
-| 2.10 | `HISTORY_TURNS` env var + `/gate context` to cap injected history length | [→ features/history-turns.md](features/history-turns.md) |
+| 2.10 | **[HIGH]** `HISTORY_TURNS` env var — control how many SQLite exchanges are injected (0 = none, ideal with `AI_CLI_OPTS --resume`) | [→ features/history-turns.md](features/history-turns.md) |
 | 2.11 | Voice transcription — local offline Whisper (`WHISPER_PROVIDER=local`) | [→ features/whisper-local.md](features/whisper-local.md) |
 | 2.12 | Voice transcription — Google Speech-to-Text (`WHISPER_PROVIDER=google`) | [→ features/whisper-google.md](features/whisper-google.md) |
 | 2.13 | Lightweight web dashboard — read-only HTTP status page inside the container | [→ features/web-dashboard.md](features/web-dashboard.md) |
