@@ -161,15 +161,17 @@ class TestCommandRouting:
             await bot._on_message(_make_event(text="gate git"), say, client)
         assert say.call_count >= 1
 
-    async def test_unknown_subcommand_shows_help(self):
-        bot = _make_bot()
+    async def test_unknown_subcommand_forwarded_to_ai(self):
+        backend = _make_backend(response="Sure!")
+        bot = _make_bot(backend=backend)
         say = _make_say()
         client = _make_client()
-        await bot._on_message(_make_event(text="gate unknowncmd"), say, client)
-        # Should send error + help
-        assert say.call_count >= 1
-        all_text = " ".join(str(c) for c in say.call_args_list)
-        assert "Unknown" in all_text or "help" in all_text.lower()
+        with patch("src.platform.common.history.get_history", AsyncMock(return_value=[])), \
+             patch("src.platform.common.history.build_context", return_value="unknowncmd arg1"), \
+             patch("src.platform.common.history.add_exchange", AsyncMock()):
+            await bot._on_message(_make_event(text="gate unknowncmd arg1"), say, client)
+        # Unknown subcommand should be forwarded to AI, not show "Unknown command"
+        backend.send.assert_awaited_once()
 
     async def test_non_prefix_message_forwarded_to_ai(self):
         backend = _make_backend(response="Great!")

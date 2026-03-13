@@ -273,7 +273,12 @@ class SlackBot:
             sub = parts[1].lower() if len(parts) > 1 else ""
             args_str = parts[2] if len(parts) > 2 else ""
             args = args_str.split() if args_str else []
-            await self._dispatch(sub, args, say, client, channel)
+            # Route known utility commands to dispatcher; everything else goes to AI
+            if sub in {"run", "sync", "git", "diff", "log", "status", "clear", "restart", "confirm", "info", "help"} or not sub:
+                await self._dispatch(sub, args, say, client, channel)
+            else:
+                # Prefix was used as an addressing token — forward remainder to AI
+                await self._run_ai_pipeline(say, client, text[len(p):].strip(), channel)
         elif self._settings.bot.prefix_only:
             return  # Silently ignore unprefixed messages (PREFIX_ONLY=true)
         else:
