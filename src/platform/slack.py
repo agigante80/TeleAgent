@@ -709,7 +709,18 @@ class SlackBot:
         try:
             auth = await self._app.client.auth_test()
             self._bot_user_id = auth.get("user_id", "")
-            logger.info("Bot user_id: %s", self._bot_user_id)
+            # Try users.info for the proper display name (requires users:read scope)
+            try:
+                info = await self._app.client.users_info(user=self._bot_user_id)
+                profile = info.get("user", {}).get("profile", {})
+                self._bot_display_name = (
+                    profile.get("real_name")
+                    or profile.get("display_name")
+                    or auth.get("user", "")
+                )
+            except Exception:
+                self._bot_display_name = auth.get("user", "")
+            logger.info("Bot identity: user_id=%s name=%s", self._bot_user_id, self._bot_display_name)
         except Exception:
             logger.exception("Failed to call auth.test for bot identity")
 
