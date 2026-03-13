@@ -45,18 +45,20 @@ already has persistent session state (e.g. `AI_CLI_OPTS=--allow-all --resume=<id
 
 ---
 
-## Current Behaviour (as of v0.9.x)
+## Current Behaviour (as of v0.10.0)
 
 | Layer | Location | Current behaviour |
 |-------|----------|-------------------|
-| History limit | `src/history.py:6` (`HISTORY_LIMIT`) | Module-level constant `= 10`, not configurable |
-| History fetch | `src/history.py:38` (`get_history`) | Always fetches `LIMIT ?` with the constant |
-| Prompt build | `src/platform/common.py:45` (`build_prompt`) | Calls `get_history(chat_id)` — no limit param passed |
-| Config | `src/config.py` (`BotConfig`) | Only `history_enabled: bool` — no turns field |
-| Injection | `src/history.py:61` (`build_context`) | Prepends all returned rows to the prompt |
+| History limit | `src/history.py:6` (`HISTORY_LIMIT`) | `HISTORY_LIMIT = 10` — module-level constant, not configurable |
+| History fetch | `src/history.py:38` (`get_history`) | `async def get_history(chat_id: str) -> list[tuple[str, str]]` — no `limit` param |
+| SQL query | `src/history.py:43` | `LIMIT ?` with `HISTORY_LIMIT` always — correct SQL, wrong value source |
+| Prompt build | `src/platform/common.py:51–53` (`build_prompt`) | `await history.get_history(chat_id) if settings.bot.history_enabled else []` — no limit param |
+| Config | `src/config.py:46` (`BotConfig`) | Only `history_enabled: bool = True` — no `history_turns` field |
+| Test helper | `tests/unit/test_platform_common.py:14` (`_make_settings`) | Sets `bot.history_enabled` only — must add `bot.history_turns = 10` |
+| Test helper | `tests/unit/test_bot.py:9` (`_make_settings`) | Similar — check if `history_turns` is accessed; add if needed |
+| Test helper | `tests/unit/test_slack_bot.py:22` (`_make_settings`) | Same — add `bot.history_turns = 10` |
 
-> **Key gap**: The injection window is a hardcoded constant (`HISTORY_LIMIT = 10`). There is no
-> env var to change it, and `0` (disable injection) is not supported without disabling storage.
+> **Key gap**: `get_history` has no `limit` parameter; `build_prompt` cannot vary the window. The SQL `LIMIT ?` already works with a variable — just needs to be wired through.
 
 ---
 
@@ -280,20 +282,31 @@ async def get_history(chat_id: str, limit: int = HISTORY_LIMIT) -> list[tuple[st
 
 ### Step 3 — `src/platform/common.py`: pass `limit` from settings
 
+Current `build_prompt` (line 51):
 ```python
-async def build_prompt(
-    text: str, chat_id: str, settings: Settings, backend: AICLIBackend
-) -> str:
-    if backend.is_stateful:
-        return text
-    turns = settings.bot.history_turns
-    hist = (
-        await history.get_history(chat_id, limit=turns)
-        if settings.bot.history_enabled and turns > 0
-        else []
-    )
-    return history.build_context(hist, text)
+hist = (
+    await history.get_history(chat_id) if settings.bot.history_enabled else []
+)
 ```
+
+Replace with:
+```python
+turns = settings.bot.history_turns
+hist = (
+    await history.get_history(chat_id, limit=turns)
+    if settings.bot.history_enabled and turns > 0
+    else []
+)
+```
+
+### Step 4 — Update test helpers for the new `history_turns` field
+
+In `tests/unit/test_platform_common.py`, `_make_settings()` builds a `MagicMock(spec=BotConfig)` and sets `bot.history_enabled`. Add:
+```python
+bot.history_turns = 10  # default; set to 0 in tests that need it
+```
+
+In `tests/unit/test_bot.py` and `tests/unit/test_slack_bot.py`, the same pattern applies — add `bot.history_turns = 10` to the `_make_settings()` helpers there too. Run tests first without this change to see which tests fail (if `spec=BotConfig` is used, accessing `.history_turns` before it's set will raise `AttributeError`).
 
 ---
 
@@ -303,12 +316,13 @@ async def build_prompt(
 |------|--------|-------------------|
 | `src/config.py` | **Edit** | Add `history_turns: int = Field(10, env="HISTORY_TURNS")` to `BotConfig` |
 | `src/history.py` | **Edit** | Add `limit` param to `get_history()`; short-circuit on `limit == 0`; cap at 100 |
-| `src/platform/common.py` | **Edit** | Pass `settings.bot.history_turns` as `limit` to `get_history()` |
+| `src/platform/common.py` | **Edit** | Pass `settings.bot.history_turns` as `limit` to `get_history()` in `build_prompt()` |
 | `src/main.py` | **Edit** | Add validation for `history_turns` in `_validate_config()` |
 | `README.md` | **Edit** | Add `HISTORY_TURNS` env var row; add `AI_CLI_OPTS` scenario with pros/cons |
 | `tests/unit/test_history.py` | **Edit** | Add tests for `limit=0`, `limit=5`, `limit=100` |
-| `tests/unit/test_bot.py` | **Edit** | Add `history_turns=10` to `_make_settings()` mock |
-| `tests/unit/test_slack_bot.py` | **Edit** | Same mock update |
+| `tests/unit/test_platform_common.py` | **Edit** | Add `bot.history_turns = 10` to `_make_settings()`; add `HISTORY_TURNS=0` test |
+| `tests/unit/test_bot.py` | **Edit** | Add `bot.history_turns = 10` (or param) to `_make_settings()` mock if `spec=BotConfig` is used |
+| `tests/unit/test_slack_bot.py` | **Edit** | Same as `test_bot.py` |
 | `docs/roadmap.md` | **Edit** | Mark `2.10` priority High; update description |
 | `docs/features/history-turns.md` | **Edit** | Change status to `Implemented` after merge |
 
@@ -324,23 +338,58 @@ async def build_prompt(
 
 ## Test Plan
 
-### `tests/unit/test_history.py` additions
+### `tests/unit/test_history.py` additions to `TestHistoryDB`
 
-| Test | What it checks |
-|------|----------------|
-| `test_get_history_default_limit` | Without `limit` param, returns at most `HISTORY_LIMIT` rows |
-| `test_get_history_custom_limit` | `limit=5` returns at most 5 rows |
-| `test_get_history_zero_returns_empty` | `limit=0` returns `[]` without querying DB |
-| `test_get_history_cap_at_100` | `limit=200` is treated as `100` |
-| `test_build_prompt_turns_zero` | With `history_turns=0` and `history_enabled=True`, prompt has no prefix |
-| `test_build_prompt_turns_nonzero` | With `history_turns=3`, at most 3 exchanges are prepended |
+The `test_history_limit_respected` test already exists and calls `get_history("chat1")` without a limit. After this feature, it verifies the default `HISTORY_LIMIT` still applies. Add these new tests:
 
-### `tests/unit/test_bot.py` additions
+```python
+async def test_get_history_custom_limit(self):
+    """limit=5 returns at most 5 rows even if more exist."""
+    await history_module.init_db()
+    for i in range(8):
+        await history_module.add_exchange("chat1", f"q{i}", f"a{i}")
+    rows = await history_module.get_history("chat1", limit=5)
+    assert len(rows) == 5
 
-| Test | What it checks |
-|------|----------------|
-| `test_history_turns_config_default` | Default `history_turns` is `10` |
-| `test_history_turns_zero_no_injection` | With `HISTORY_TURNS=0`, `build_prompt` returns raw text |
+async def test_get_history_zero_returns_empty(self):
+    """limit=0 returns [] without querying the DB."""
+    await history_module.init_db()
+    await history_module.add_exchange("chat1", "q", "a")
+    rows = await history_module.get_history("chat1", limit=0)
+    assert rows == []
+
+async def test_get_history_cap_at_100(self):
+    """limit=200 is treated as 100 (cap enforced)."""
+    await history_module.init_db()
+    for i in range(15):
+        await history_module.add_exchange("chat1", f"q{i}", f"a{i}")
+    rows = await history_module.get_history("chat1", limit=200)
+    # Only 15 exchanges stored; cap doesn't reduce this, just limits the SQL LIMIT
+    assert len(rows) == 15  # fewer than cap, so all are returned
+```
+
+### `tests/unit/test_platform_common.py` additions
+
+The `_make_settings()` helper uses `MagicMock(spec=BotConfig)` and sets `bot.history_enabled`. After this feature, `build_prompt()` also accesses `bot.history_turns`. Add to `_make_settings()`:
+
+```python
+def _make_settings(history_enabled=True, history_turns=10, ...):
+    bot = MagicMock(spec=BotConfig)
+    bot.history_enabled = history_enabled
+    bot.history_turns = history_turns
+    ...
+```
+
+Add test:
+```python
+async def test_build_prompt_turns_zero_no_history_prefix(self):
+    """HISTORY_TURNS=0: build_prompt returns raw text without any history prefix."""
+    settings = _make_settings(history_enabled=True, history_turns=0)
+    backend = _make_backend(is_stateful=False)
+    result = await build_prompt("hello", "chat1", settings, backend)
+    assert result == "hello"
+    assert "<HISTORY>" not in result
+```
 
 ---
 

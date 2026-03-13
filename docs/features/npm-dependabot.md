@@ -27,16 +27,18 @@ Add Dependabot coverage for `@github/copilot-cli` and `@openai/codex` npm packag
 
 ---
 
-## Current Behaviour (as of v0.8.x)
+## Current Behaviour (as of v0.10.0)
 
 | Layer | Location | Current behaviour |
 |-------|----------|-------------------|
-| Dockerfile | `Dockerfile:30` | `RUN npm install -g @github/copilot@0.0.421` — hardcoded, never updated |
-| Dockerfile | `Dockerfile:33` | `RUN npm install -g @openai/codex@0.111.0` — hardcoded, never updated |
-| Dependabot | `.github/dependabot.yml` | Covers `pip`, `github-actions`, `docker` — no `npm` entry |
+| Dockerfile | `Dockerfile:30` | `RUN npm install -g @github/copilot@0.0.421` — hardcoded, no Dependabot coverage |
+| Dockerfile | `Dockerfile:33` | `RUN npm install -g @openai/codex@0.111.0` — hardcoded, no Dependabot coverage |
+| Dependabot | `.github/dependabot.yml` | Three `updates` entries: `pip` (with grouping), `github-actions`, `docker` — no `npm` entry |
 | package.json | *(missing)* | No `package.json` exists at repo root |
 
-> **Key gap**: Dependabot's `npm` ecosystem requires a `package.json` (or `package-lock.json`) to track dependencies. Without one, it has nothing to scan.
+> **Key gap**: Dependabot's `npm` ecosystem requires a `package.json` at the scanned directory. Without one, it has nothing to scan, so both CLI pins are invisible to automated updates.
+
+> **Note on Dockerfile comment**: Lines 30 and 33 already carry the comment `# pinned version (update via Dependabot)` — this change fulfils that stated intent.
 
 ---
 
@@ -131,10 +133,10 @@ N/A — no new env vars.
 
 ### Step 2 — Add `npm` entry to `.github/dependabot.yml`
 
-Append to the existing `updates` list:
+The existing file has three entries (`pip`, `github-actions`, `docker`) — append a fourth:
 
 ```yaml
-  # npm globals (@github/copilot-cli, @openai/codex) — manifest in package.json
+  # npm globals (@github/copilot, @openai/codex) — manifest in package.json
   - package-ecosystem: npm
     directory: /
     schedule:
@@ -147,6 +149,8 @@ Append to the existing `updates` list:
       - dependencies
       - npm
 ```
+
+> Match the existing `monday 06:00 UTC` schedule used by `pip`, `github-actions`, and `docker` for consistency.
 
 ---
 

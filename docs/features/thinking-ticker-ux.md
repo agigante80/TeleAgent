@@ -30,11 +30,18 @@ Two small UX improvements to the "Still thinking…" ticker: elapsed time is sho
 
 | Layer | Location | Current behaviour |
 |-------|----------|-------------------|
-| Config | `src/config.py:54` (`BotConfig`) | `ai_timeout_secs: int = 720` |
-| Ticker | `src/platform/common.py:32–38` (`thinking_ticker`) | Always formats elapsed as `{elapsed}s` |
-| Ticker | `src/platform/common.py:34–36` | Appends `— will cancel in {remaining}s` when `remaining <= warn_before_secs` |
+| Config | `src/config.py:54` (`BotConfig`) | `ai_timeout_secs: int = 720` (comment says `0 = no timeout`) |
+| Ticker | `src/platform/common.py:11` (`thinking_ticker`) | Module-level async function, shared by both platforms |
+| Ticker | `src/platform/common.py:32` | `elapsed = int(_clock() - start)` computed each loop |
+| Ticker | `src/platform/common.py:34` | `text = f"⏳ Still thinking… ({elapsed}s) — will cancel in {remaining}s"` |
+| Ticker | `src/platform/common.py:36` | `text = f"⏳ Still thinking… ({elapsed}s)"` (non-warning branch) |
+| Ticker | `src/platform/common.py:38` | `text = f"⏳ Still thinking… ({elapsed}s)"` (timeout=0 branch) |
+| Tests | `tests/unit/test_thinking_ticker.py` | 6 tests; assert `"will cancel in"` in text but do NOT assert exact seconds format — safe to update format without breaking these |
+| Tests | `tests/unit/test_platform_common.py` | Tests `build_prompt`, `save_to_history`, `is_allowed_slack` — no ticker tests here |
 
-> **Key gap**: elapsed time is always shown in raw seconds; the default timeout of 720s kills long-running requests without user action.
+> **Key gap**: all three `text = f"…({elapsed}s)…"` assignments use raw seconds. The fix is a single helper called from all three lines.
+
+> **Important**: the existing `test_thinking_ticker.py` tests assert on `"will cancel in"` but NOT on the `Xs` format — they will continue to pass after this change without modification. Add new tests for the `_format_elapsed` helper in `test_thinking_ticker.py` (not a new file).
 
 ---
 
@@ -188,7 +195,8 @@ There are 3 text-assignment lines inside `thinking_ticker` — all three must us
 |------|--------|-------------------|
 | `src/config.py` | **Edit** | `ai_timeout_secs` default `720` → `0` |
 | `src/platform/common.py` | **Edit** | Add `_format_elapsed()`; update 3 format strings in `thinking_ticker` |
-| `tests/unit/test_common.py` | **Create** | Unit tests for `_format_elapsed` + updated ticker text assertions |
+| `tests/unit/test_thinking_ticker.py` | **Edit** | Add `_format_elapsed` unit tests + 3 ticker format assertions (do NOT create a new file) |
+| `tests/unit/test_config.py` | **Edit** | Add `test_ai_timeout_default_is_zero` |
 | `README.md` | **Edit** | Update `AI_TIMEOUT_SECS` default in env var table |
 | `docs/features/thinking-ticker-ux.md` | **Edit** | Mark `Implemented` after merge |
 | `docs/roadmap.md` | **Edit** | Mark ✅ |
@@ -203,24 +211,72 @@ None. All stdlib (`divmod` is a built-in).
 
 ## Test Plan
 
-### `tests/unit/test_common.py` (new file)
+### `tests/unit/test_thinking_ticker.py` additions (NOT a new file)
 
-| Test | What it checks |
-|------|----------------|
-| `test_format_elapsed_under_60s` | `_format_elapsed(45)` → `"45s"` |
-| `test_format_elapsed_exactly_60s` | `_format_elapsed(60)` → `"1m 0s"` |
-| `test_format_elapsed_125s` | `_format_elapsed(125)` → `"2m 5s"` |
-| `test_format_elapsed_zero` | `_format_elapsed(0)` → `"0s"` |
-| `test_format_elapsed_3600s` | `_format_elapsed(3600)` → `"60m 0s"` |
-| `test_ticker_shows_seconds_below_60` | Ticker text at elapsed=45 contains `"45s"` (not `"0m 45s"`) |
-| `test_ticker_shows_human_at_or_above_60` | Ticker text at elapsed=125 contains `"2m 5s"` |
-| `test_ticker_cancel_warning_human` | Warning branch at elapsed=680 (timeout=720, warn=60) contains `"40s"` remaining |
+Add `_format_elapsed` tests to the **existing** `tests/unit/test_thinking_ticker.py` file, which already imports from `src.platform.common`:
+
+```python
+from src.platform.common import _format_elapsed  # add to existing imports
+
+class TestFormatElapsed:
+    def test_under_60s(self):
+        assert _format_elapsed(45) == "45s"
+
+    def test_zero(self):
+        assert _format_elapsed(0) == "0s"
+
+    def test_exactly_60s(self):
+        assert _format_elapsed(60) == "1m 0s"
+
+    def test_125s(self):
+        assert _format_elapsed(125) == "2m 5s"
+
+    def test_3600s(self):
+        assert _format_elapsed(3600) == "60m 0s"
+
+class TestTickerFormatsElapsed:
+    async def test_ticker_shows_seconds_below_60(self):
+        """Ticker text at elapsed<60s uses raw seconds format."""
+        edit_fn = AsyncMock()
+        await _run_ticker(edit_fn, slow_threshold=0, update_interval=30,
+                          timeout_secs=0, warn_before_secs=60,
+                          cancel_after_sleeps=1,
+                          monotonic_values=[0.0, 45.0])
+        text = edit_fn.call_args_list[0][0][0]
+        assert "45s" in text
+        assert "0m" not in text   # must NOT use minute format below 60s
+
+    async def test_ticker_shows_human_at_or_above_60(self):
+        """Ticker text at elapsed>=60s uses human-readable format."""
+        edit_fn = AsyncMock()
+        await _run_ticker(edit_fn, slow_threshold=0, update_interval=30,
+                          timeout_secs=0, warn_before_secs=60,
+                          cancel_after_sleeps=1,
+                          monotonic_values=[0.0, 125.0])
+        text = edit_fn.call_args_list[0][0][0]
+        assert "2m 5s" in text
+
+    async def test_ticker_cancel_warning_human(self):
+        """Warning branch remaining time also uses _format_elapsed."""
+        edit_fn = AsyncMock()
+        # elapsed=680s, timeout=720s, remaining=40s — still under 60 → shows "40s"
+        await _run_ticker(edit_fn, slow_threshold=0, update_interval=30,
+                          timeout_secs=720, warn_before_secs=60,
+                          cancel_after_sleeps=1,
+                          monotonic_values=[0.0, 680.0])
+        text = edit_fn.call_args_list[-1][0][0]
+        assert "will cancel in" in text
+        assert "40s" in text
+```
 
 ### `tests/unit/test_config.py` additions
 
-| Test | What it checks |
-|------|----------------|
-| `test_ai_timeout_default_is_zero` | `BotConfig().ai_timeout_secs == 0` |
+```python
+def test_ai_timeout_default_is_zero():
+    """Default AI_TIMEOUT_SECS must be 0 (no timeout) after feature 2.15."""
+    cfg = BotConfig()
+    assert cfg.ai_timeout_secs == 0
+```
 
 ---
 
