@@ -653,9 +653,10 @@ class SlackBot:
                 profile = member.get("profile", {})
                 bot_id = profile.get("bot_id", "")
                 display_name = profile.get("display_name") or member.get("name", "")
-                # Match our own user_id to learn our display name
+                # Match our own user_id to learn our display name (only if not already set)
                 if self._bot_user_id and member.get("id") == self._bot_user_id and display_name:
-                    self._bot_display_name = display_name
+                    if not self._bot_display_name:
+                        self._bot_display_name = display_name
                 if not bot_id:
                     continue
                 for key in (display_name, member.get("name", "")):
