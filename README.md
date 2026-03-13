@@ -174,7 +174,7 @@ Copy `.env.example` — it documents every variable with examples.
 | `STREAM_THROTTLE_SECS` | `1.0` | Seconds between streaming message edits |
 | `CONFIRM_DESTRUCTIVE` | `true` | Set `false` to skip confirmation for destructive shell commands |
 | `SKIP_CONFIRM_KEYWORDS` | — | Comma-separated keywords that bypass destructive confirmation (e.g. `push,rm`) |
-| `AI_TIMEOUT_SECS` | `360` | Hard timeout for any AI backend in seconds (0 = no timeout) |
+| `AI_TIMEOUT_SECS` | `720` | Hard timeout for any AI backend in seconds (0 = no timeout) |
 | `THINKING_SLOW_THRESHOLD_SECS` | `15` | Seconds of silence before first "Still thinking…" update |
 | `THINKING_UPDATE_SECS` | `30` | Seconds between subsequent elapsed-time updates |
 | `AI_TIMEOUT_WARN_SECS` | `60` | Seconds before hard timeout to include a cancellation warning |
@@ -469,7 +469,7 @@ Copy `.env.example` — it documents every variable with examples.
 | `STREAM_THROTTLE_SECS` | `1.0` | Seconds between streaming message edits |
 | `CONFIRM_DESTRUCTIVE` | `true` | Set `false` to skip confirmation for destructive shell commands |
 | `SKIP_CONFIRM_KEYWORDS` | — | Comma-separated keywords that bypass destructive confirmation (e.g. `push,rm`) |
-| `AI_TIMEOUT_SECS` | `360` | Hard timeout for any AI backend in seconds (0 = no timeout) |
+| `AI_TIMEOUT_SECS` | `720` | Hard timeout for any AI backend in seconds (0 = no timeout) |
 | `THINKING_SLOW_THRESHOLD_SECS` | `15` | Seconds of silence before first "Still thinking…" update |
 | `THINKING_UPDATE_SECS` | `30` | Seconds between subsequent elapsed-time updates |
 | `AI_TIMEOUT_WARN_SECS` | `60` | Seconds before hard timeout to include a cancellation warning |
