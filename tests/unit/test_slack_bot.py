@@ -33,6 +33,7 @@ def _make_settings(
     prefix="gate",
     prefix_only=False,
     trusted_agent_bot_ids=None,
+    slack_delete_thinking=True,
 ):
     bot = MagicMock(spec=BotConfig)
     bot.bot_cmd_prefix = prefix
@@ -54,6 +55,7 @@ def _make_settings(
     slack.slack_channel_id = channel_id
     slack.allowed_users = allowed_users or []
     slack.trusted_agent_bot_ids = trusted_agent_bot_ids or []
+    slack.slack_delete_thinking = slack_delete_thinking
     gh = MagicMock(spec=GitHubConfig)
     gh.github_repo = "owner/repo"
     gh.branch = "main"
@@ -407,7 +409,7 @@ class TestCmdConfirm:
 # ── Streaming ─────────────────────────────────────────────────────────────────
 
 class TestStreaming:
-    async def test_stream_calls_edit(self):
+    async def test_stream_posts_new_message(self):
         backend = _make_backend(is_stateful=True, response="streamed!")
 
         async def _fake_stream(prompt):
@@ -425,5 +427,85 @@ class TestStreaming:
             await bot._run_ai_pipeline(say, client, "query", "C12345")
         # say called for initial placeholder
         say.assert_awaited()
-        # edit called for final
-        client.chat_update.assert_awaited()
+        # final response posted as new message
+        client.chat_postMessage.assert_awaited()
+        call_kwargs = client.chat_postMessage.call_args[1]
+        assert call_kwargs["channel"] == "C12345"
+        assert "streamed!" in call_kwargs["text"]
+
+    async def test_stream_final_deletes_thinking(self):
+        """With slack_delete_thinking=True (default), chat_delete is called on the placeholder."""
+        backend = _make_backend(is_stateful=True, response="hello!")
+
+        async def _fake_stream(prompt):
+            yield "hello!"
+
+        backend.stream = _fake_stream
+        bot = _make_bot(_make_settings(slack_delete_thinking=True), backend=backend)
+        bot._settings.bot.stream_responses = True
+        bot._settings.bot.stream_throttle_secs = 0.0
+        say = _make_say()
+        say.return_value = {"ts": "111.000"}
+        client = _make_client()
+        with patch("src.platform.common.history.add_exchange", AsyncMock()), \
+             patch("src.platform.common.history.get_history", AsyncMock(return_value=[])), \
+             patch("src.platform.common.history.build_context", return_value="hello!"):
+            await bot._run_ai_pipeline(say, client, "hi", "C12345")
+        client.chat_delete.assert_awaited_once()
+        assert client.chat_delete.call_args[1]["ts"] == "111.000"
+
+    async def test_stream_no_delete_when_disabled(self):
+        """With slack_delete_thinking=False, chat_delete is NOT called."""
+        backend = _make_backend(is_stateful=True, response="hello!")
+
+        async def _fake_stream(prompt):
+            yield "hello!"
+
+        backend.stream = _fake_stream
+        bot = _make_bot(_make_settings(slack_delete_thinking=False), backend=backend)
+        bot._settings.bot.stream_responses = True
+        bot._settings.bot.stream_throttle_secs = 0.0
+        say = _make_say()
+        client = _make_client()
+        with patch("src.platform.common.history.add_exchange", AsyncMock()), \
+             patch("src.platform.common.history.get_history", AsyncMock(return_value=[])), \
+             patch("src.platform.common.history.build_context", return_value="hello!"):
+            await bot._run_ai_pipeline(say, client, "hi", "C12345")
+        client.chat_delete.assert_not_awaited()
+
+    async def test_stream_delete_failure_is_silent(self):
+        """If chat_delete raises, no exception propagates; response is still posted."""
+        backend = _make_backend(is_stateful=True, response="hello!")
+
+        async def _fake_stream(prompt):
+            yield "hello!"
+
+        backend.stream = _fake_stream
+        bot = _make_bot(_make_settings(slack_delete_thinking=True), backend=backend)
+        bot._settings.bot.stream_responses = True
+        bot._settings.bot.stream_throttle_secs = 0.0
+        say = _make_say()
+        client = _make_client()
+        client.chat_delete.side_effect = Exception("delete forbidden")
+        with patch("src.platform.common.history.add_exchange", AsyncMock()), \
+             patch("src.platform.common.history.get_history", AsyncMock(return_value=[])), \
+             patch("src.platform.common.history.build_context", return_value="hello!"):
+            # Must not raise
+            await bot._run_ai_pipeline(say, client, "hi", "C12345")
+        # Response still posted despite delete failure
+        client.chat_postMessage.assert_awaited()
+
+    async def test_nonstream_final_posts_new_message(self):
+        """Non-streaming path posts final response as new message, not an edit."""
+        backend = _make_backend(is_stateful=True, response="non-streamed!")
+        bot = _make_bot(_make_settings(stream=False), backend=backend)
+        say = _make_say()
+        client = _make_client()
+        with patch("src.platform.common.history.add_exchange", AsyncMock()), \
+             patch("src.platform.common.history.get_history", AsyncMock(return_value=[])), \
+             patch("src.platform.common.history.build_context", return_value="non-streamed!"), \
+             patch("src.executor.summarize_if_long", AsyncMock(return_value="non-streamed!")):
+            await bot._run_ai_pipeline(say, client, "query", "C12345")
+        client.chat_postMessage.assert_awaited()
+        call_kwargs = client.chat_postMessage.call_args[1]
+        assert "non-streamed!" in call_kwargs["text"]

@@ -159,10 +159,15 @@ class SlackBot:
             else:
                 await _stream_body()
         except asyncio.TimeoutError:
-            await self._edit(
-                client, channel, ts,
-                f"⚠️ Stream cancelled after {cfg.ai_timeout_secs}s."
+            await client.chat_postMessage(
+                channel=channel,
+                text=f"⚠️ Stream cancelled after {cfg.ai_timeout_secs}s.",
             )
+            if self._settings.slack.slack_delete_thinking:
+                try:
+                    await client.chat_delete(channel=channel, ts=ts)
+                except Exception:
+                    logger.debug("Could not delete thinking placeholder (ts=%s)", ts)
             return ""
         finally:
             ticker.cancel()
@@ -174,7 +179,12 @@ class SlackBot:
             if len(accumulated) > max_chars
             else accumulated
         )
-        await self._edit(client, channel, ts, final or "_(empty response)_")
+        await client.chat_postMessage(channel=channel, text=final or "_(empty response)_")
+        if self._settings.slack.slack_delete_thinking:
+            try:
+                await client.chat_delete(channel=channel, ts=ts)
+            except Exception:
+                logger.debug("Could not delete thinking placeholder (ts=%s)", ts)
         return final
 
     async def _run_ai_pipeline(
@@ -218,10 +228,15 @@ class SlackBot:
                     else:
                         response = await self._backend.send(prompt)
                 except asyncio.TimeoutError:
-                    await self._edit(
-                        client, channel, ts,
-                        f"⚠️ Request cancelled after {cfg.ai_timeout_secs}s."
+                    await client.chat_postMessage(
+                        channel=channel,
+                        text=f"⚠️ Request cancelled after {cfg.ai_timeout_secs}s.",
                     )
+                    if self._settings.slack.slack_delete_thinking:
+                        try:
+                            await client.chat_delete(channel=channel, ts=ts)
+                        except Exception:
+                            logger.debug("Could not delete thinking placeholder (ts=%s)", ts)
                     return
                 finally:
                     ticker.cancel()
@@ -230,9 +245,14 @@ class SlackBot:
                 response = await executor.summarize_if_long(
                     response, self._settings.bot.max_output_chars, self._backend
                 )
-                await self._edit(
-                    client, channel, ts, response or "_(empty response)_"
+                await client.chat_postMessage(
+                    channel=channel, text=response or "_(empty response)_"
                 )
+                if self._settings.slack.slack_delete_thinking:
+                    try:
+                        await client.chat_delete(channel=channel, ts=ts)
+                    except Exception:
+                        logger.debug("Could not delete thinking placeholder (ts=%s)", ts)
             await common.save_to_history(channel, text, response, self._settings)
         except Exception as exc:
             logger.exception("AI backend error")
