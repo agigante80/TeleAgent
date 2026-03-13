@@ -666,7 +666,7 @@ class SlackBot:
         if not channel:
             logger.info("SLACK_CHANNEL_ID not set — skipping ready message.")
             return
-        text = build_ready_message(self._settings, VERSION, self._p)
+        text = build_ready_message(self._settings, VERSION, self._p, use_slash=False)
         if client is None:
             client = self._app.client
         await client.chat_postMessage(channel=channel, text=text)
