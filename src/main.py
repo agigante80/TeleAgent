@@ -158,8 +158,8 @@ async def _install_commit_msg_hook() -> None:
             "raw_diff = subprocess.run(['git', 'diff', '--cached'], capture_output=True, text=True).stdout\n"
             "diff = filter_diff(raw_diff)\n"
             "if check(msg) or check(diff):\n"
-            "    print('\\033[31m[commit-msg hook] WARNING: possible secret detected in commit. ')\n"
-            "    print('Set ALLOW_SECRETS=true in the environment to bypass this check.\\033[0m')\n"
+            "    print('\\033[31m[commit-msg hook] BLOCKED: possible secret detected in commit message or staged diff.')\n"
+            "    print('Remove the secret before committing — git history is permanent.\\033[0m')\n"
             "    sys.exit(1)\n"
         )
         hook_file.write_text(hook_script)
