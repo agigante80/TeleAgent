@@ -59,7 +59,7 @@ class TestStartup:
              patch("src.repo.configure_git_auth", AsyncMock()), \
              patch("src.runtime.install_deps", mock_install), \
              patch("src.history.init_db", mock_init_db), \
-             patch("src.ai.factory.create_backend", return_value=mock_backend):
+             patch("src.main.create_backend", return_value=mock_backend):
 
             from src.main import startup
             import signal

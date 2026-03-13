@@ -7,5 +7,5 @@ import pytest
 def clean_env(monkeypatch):
     """Remove real credentials from env so tests don't accidentally use them."""
     for key in ("TG_BOT_TOKEN", "TG_CHAT_ID", "GITHUB_TOKEN", "GITHUB_REPO",
-                "COPILOT_GITHUB_TOKEN", "AI_API_KEY"):
+                "COPILOT_GITHUB_TOKEN", "AI_API_KEY", "BRANCH", "GITHUB_REPO_TOKEN"):
         monkeypatch.delenv(key, raising=False)

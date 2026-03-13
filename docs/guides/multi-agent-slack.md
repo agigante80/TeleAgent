@@ -6,11 +6,11 @@ This guide shows how to run multiple AgentGate instances as specialised AI agent
 
 Three agents, one `#agentgate` Slack channel:
 
-| Agent | Trigger prefix | Backend | Skills file |
-|-------|---------------|---------|-------------|
-| `@GateCode` — Developer | `dev` | Copilot | `skills/dev-agent.md` |
-| `@GateSec` — Security | `sec` | Anthropic Claude | `skills/sec-agent.md` |
-| `@GateDocs` — Docs writer | `docs` | OpenAI GPT-4o | `skills/docs-agent.md` |
+| Agent | Trigger prefix | Backend | Model |
+|-------|---------------|---------|-------|
+| `@GateCode` — Developer | `dev` | Copilot | `claude-sonnet-4.6` |
+| `@GateSec` — Security | `sec` | Copilot | `claude-opus-4.6` |
+| `@GateDocs` — Docs writer | `docs` | Copilot | `gpt-5-mini` |
 
 **Prerequisites**: A Slack workspace where you can install apps, Docker, and the credentials for at least one AI backend.
 
@@ -18,21 +18,28 @@ Three agents, one `#agentgate` Slack channel:
 
 ## How agents trigger
 
-Agents listen to ALL messages in the channels they're in. The **prefix** is the trigger — not an @-mention.
+Agents respond to two types of messages:
 
+**Prefix trigger** — messages starting with the agent's prefix:
 ```
 dev explain the history module      ← @GateCode responds
 sec review src/executor.py          ← @GateSec responds
 docs write a README for this func   ← @GateDocs responds
 ```
 
-With `PREFIX_ONLY=true` (required for multi-agent), each bot silently ignores messages that don't start with its prefix. This prevents all three bots answering the same message.
+**@mention trigger** — directly @mentioning the bot anywhere in a message:
+```
+@GateCode what's the status of the auth refactor?   ← GateCode responds (bypasses PREFIX_ONLY)
+@GateSec are you available?                          ← GateSec responds
+```
+
+With `PREFIX_ONLY=true` (required for multi-agent), each bot silently ignores unprefixed messages from human users. @mentions always get a response regardless of `PREFIX_ONLY`.
 
 ---
 
 ## Agent isolation and awareness
 
-Each agent is an independent container with no awareness of the others:
+Each agent is an independent container with its own clone of the repo and history DB:
 
 | Question | Answer |
 |----------|--------|
@@ -40,6 +47,34 @@ Each agent is an independent container with no awareness of the others:
 | Do agents respond to each other's messages? | No by default — bots ignore bot messages |
 | Can agents request work from each other? | Yes, via `TRUSTED_AGENT_BOT_IDS` (see below) |
 | Do agents respond to `@here` or `@channel`? | No — `PREFIX_ONLY=true` ignores these |
+| Does each agent know its teammates? | **Yes** — team context is auto-generated at startup |
+
+### Auto-generated team context
+
+At startup, each agent automatically builds a team context string and prepends it to every AI prompt. This means bots always know who they are, who their teammates are, and how to address them — without any manual configuration:
+
+```
+You are GateCode (prefix: dev).
+Your team in this Slack workspace:
+  - GateSec (prefix: sec) — users address them with: sec <message>
+  - GateDocs (prefix: docs) — users address them with: docs <message>
+Repo: agigante80/AgentGate | Branch: develop
+Formatting (Slack mrkdwn): *bold* (NOT **bold**), _italic_, `inline code`, ```code blocks```, >blockquote, - bullet list
+```
+
+This context is derived automatically from `BOT_CMD_PREFIX`, `TRUSTED_AGENT_BOT_IDS` (including their prefixes), and `GITHUB_REPO`/`BRANCH`. No additional env var is needed.
+
+> **Why team context and not skills files?** Skills files (`COPILOT_SKILLS_DIRS`) are loaded by **both Slack and Telegram** deployments. Platform-specific instructions (like Slack mrkdwn syntax) must go in the team context, which is Slack-only code. This keeps skills files platform-neutral and reusable.
+
+### Optional `SYSTEM_PROMPT`
+
+You can add a `SYSTEM_PROMPT` env var to each `.env` file for agent-specific role descriptions or persona customisation. It is appended after the auto-generated team context:
+
+```bash
+SYSTEM_PROMPT=You are a security-focused code reviewer. Always check for injection vulnerabilities, insecure defaults, and missing input validation.
+```
+
+Leave it empty (default) to rely entirely on the skills files.
 
 ---
 
@@ -49,11 +84,13 @@ You can configure agents to delegate work to each other. For example, after `@Ga
 
 **How it works:**
 
-1. You add each agent's Slack bot user ID to the other agents' `TRUSTED_AGENT_BOT_IDS` list
+1. You add each agent's `bot_id` to the other agents' `TRUSTED_AGENT_BOT_IDS` list
 2. A trusted agent's message that starts with the receiving bot's prefix is processed as a command
 3. The sending agent's skills file instructs the AI when and how to format a delegation request
 
-**Finding a bot's user ID**: In Slack, click the bot's profile → "More" → copy the member ID (starts with `B`).
+**Finding a bot's `bot_id`**: You don't need to. Use the bot's **display name and prefix** (e.g. `"GateCode:dev"`) directly in `TRUSTED_AGENT_BOT_IDS` — AgentGate resolves the name to the internal `bot_id` automatically at startup via the Slack API. The `:prefix` suffix tells each agent how to address its teammates in the auto-generated team context. This works even when each agent runs in its own independent container, since `users.list` is workspace-scoped.
+
+**Format**: `"DisplayName:prefix"` (e.g. `"GateSec:sec"`). The `:prefix` part is optional but strongly recommended — without it the team context won't include how to address that agent.
 
 **Skills file delegation example** (from `skills/dev-agent.md`):
 > "When your response involves security-sensitive changes, append at the end: `sec review: <description>`"
@@ -85,19 +122,130 @@ You can customise these files to fit your team. For inspiration, see:
 
 ## Step 2 — Create Slack Apps (repeat for each agent)
 
-1. Go to [https://api.slack.com/apps](https://api.slack.com/apps) → **Create New App** → **From scratch**
-2. Name the app (`GateCode`, `GateSec`, or `GateDocs`)
-3. **Enable Socket Mode** → generate an App-Level Token (`xapp-...`) → scope: `connections:write`
-4. **Event Subscriptions** → Subscribe to bot events: `message.channels`, `message.groups`, `message.im`, `message.mpim`
-5. **OAuth & Permissions** → Bot Token Scopes: `channels:history`, `chat:write`, `files:read`
-6. Install to workspace → copy the Bot User OAuth Token (`xoxb-...`)
-7. Note the bot's **member ID** (starts with `B`) — needed for agent-to-agent requests
+The fastest way is to use an **app manifest** — one paste creates the app with all scopes and events pre-configured.
+
+### 2a — Create the app from a manifest
+
+1. Go to [https://api.slack.com/apps](https://api.slack.com/apps) → **Create New App** → **From an app manifest**
+2. Select your workspace → paste the manifest for each agent below → **Next** → **Create**
+
+**GateCode** (`dev` prefix — Developer agent):
+
+```json
+{
+  "display_information": { "name": "GateCode" },
+  "features": {
+    "bot_user": { "display_name": "GateCode", "always_online": false }
+  },
+  "oauth_config": {
+    "scopes": {
+      "bot": [
+        "channels:history", "groups:history", "im:history", "mpim:history",
+        "chat:write", "files:read", "users:read"
+      ]
+    }
+  },
+  "settings": {
+    "event_subscriptions": {
+      "bot_events": [
+        "message.channels", "message.groups", "message.im", "message.mpim"
+      ]
+    },
+    "interactivity": { "is_enabled": true },
+    "org_deploy_enabled": false,
+    "socket_mode_enabled": true,
+    "token_rotation_enabled": false
+  }
+}
+```
+
+**GateSec** (`sec` prefix — Security agent):
+
+```json
+{
+  "display_information": { "name": "GateSec" },
+  "features": {
+    "bot_user": { "display_name": "GateSec", "always_online": false }
+  },
+  "oauth_config": {
+    "scopes": {
+      "bot": [
+        "channels:history", "groups:history", "im:history", "mpim:history",
+        "chat:write", "files:read", "users:read"
+      ]
+    }
+  },
+  "settings": {
+    "event_subscriptions": {
+      "bot_events": [
+        "message.channels", "message.groups", "message.im", "message.mpim"
+      ]
+    },
+    "interactivity": { "is_enabled": true },
+    "org_deploy_enabled": false,
+    "socket_mode_enabled": true,
+    "token_rotation_enabled": false
+  }
+}
+```
+
+**GateDocs** (`docs` prefix — Docs agent):
+
+```json
+{
+  "display_information": { "name": "GateDocs" },
+  "features": {
+    "bot_user": { "display_name": "GateDocs", "always_online": false }
+  },
+  "oauth_config": {
+    "scopes": {
+      "bot": [
+        "channels:history", "groups:history", "im:history", "mpim:history",
+        "chat:write", "files:read", "users:read"
+      ]
+    }
+  },
+  "settings": {
+    "event_subscriptions": {
+      "bot_events": [
+        "message.channels", "message.groups", "message.im", "message.mpim"
+      ]
+    },
+    "interactivity": { "is_enabled": true },
+    "org_deploy_enabled": false,
+    "socket_mode_enabled": true,
+    "token_rotation_enabled": false
+  }
+}
+```
+
+### 2b — After creating each app
+
+1. **Settings → Basic Information** → scroll to **App-Level Tokens** → **Generate Token and Scopes** → name it anything → scope: `connections:write` → **Generate** → copy the token (`xapp-...`)
+2. **Install App** → **Install to workspace** → **Allow** → copy the Bot User OAuth Token (`xoxb-...`)
 
 Repeat for all three apps.
 
+> ⚠️ **If you already created the app and need to add a scope** (e.g. `users:read`): go to **OAuth & Permissions** → **Bot Token Scopes** → add the scope → then **Install App** → **Install to workspace** → **Allow** to get a fresh token. Update `SLACK_BOT_TOKEN` in your `.env` with the new `xoxb-...` value.
+
+> **Manual setup reference**: If you prefer not to use a manifest, the equivalent manual steps are: Enable Socket Mode, add bot events (`message.channels`, `message.groups`, `message.im`, `message.mpim`) under Event Subscriptions, add bot scopes (`channels:history`, `groups:history`, `im:history`, `mpim:history`, `chat:write`, `files:read`, `users:read`) under OAuth & Permissions, then install to workspace.
+
 ---
 
-## Step 3 — Create `.env` Files
+## Step 3 — Add Bots to the Channel
+
+Each bot must be explicitly added to the Slack channel before it can receive messages there.
+
+For each of the three bots:
+
+1. Open the channel in Slack → click the channel name at the top → **Integrations** tab
+2. Click **Add an App** → find and select the bot (GateCode / GateSec / GateDocs)
+
+All three bots should now appear in the channel's integrations list.
+
+---
+
+## Step 4 — Create `.env` Files
 
 ```bash
 # .env.dev
@@ -110,9 +258,10 @@ PREFIX_ONLY=true
 GITHUB_REPO=agigante80/AgentGate
 GITHUB_REPO_TOKEN=ghp_...
 AI_CLI=copilot
-AI_MODEL=claude-sonnet-4-5
-COPILOT_SKILLS_DIRS=/skills
-TRUSTED_AGENT_BOT_IDS=["BSECAGENT","BDOCSAGENT"]   # bot IDs of @GateSec and @GateDocs
+AI_MODEL=claude-sonnet-4.6
+COPILOT_GITHUB_TOKEN=ghp_...
+COPILOT_SKILLS_DIRS=/repo/skills
+TRUSTED_AGENT_BOT_IDS=["GateSec:sec","GateDocs:docs"]   # name:prefix of each teammate
 ```
 
 ```bash
@@ -125,12 +274,11 @@ BOT_CMD_PREFIX=sec
 PREFIX_ONLY=true
 GITHUB_REPO=agigante80/AgentGate
 GITHUB_REPO_TOKEN=ghp_...
-AI_CLI=api
-AI_PROVIDER=anthropic
-AI_API_KEY=sk-ant-...
-AI_MODEL=claude-opus-4-5
-SYSTEM_PROMPT_FILE=/skills/sec-agent.md
-TRUSTED_AGENT_BOT_IDS=["BDEVAGENT","BDOCSAGENT"]   # bot IDs of @GateCode and @GateDocs
+AI_CLI=copilot
+AI_MODEL=claude-opus-4.6
+COPILOT_GITHUB_TOKEN=ghp_...
+COPILOT_SKILLS_DIRS=/repo/skills
+TRUSTED_AGENT_BOT_IDS=["GateCode:dev","GateDocs:docs"]   # name:prefix of each teammate
 ```
 
 ```bash
@@ -143,21 +291,24 @@ BOT_CMD_PREFIX=docs
 PREFIX_ONLY=true
 GITHUB_REPO=agigante80/AgentGate
 GITHUB_REPO_TOKEN=ghp_...
-AI_CLI=api
-AI_PROVIDER=openai
-AI_API_KEY=sk-...
-AI_MODEL=gpt-4o
-SYSTEM_PROMPT_FILE=/skills/docs-agent.md
-TRUSTED_AGENT_BOT_IDS=["BDEVAGENT","BSECAGENT"]    # bot IDs of @GateCode and @GateSec
+AI_CLI=copilot
+AI_MODEL=gpt-5-mini
+COPILOT_GITHUB_TOKEN=ghp_...
+COPILOT_SKILLS_DIRS=/repo/skills
+TRUSTED_AGENT_BOT_IDS=["GateCode:dev","GateSec:sec"]    # name:prefix of each teammate
 ```
 
-> **Note**: `COPILOT_SKILLS_DIRS` loads skills for the Copilot CLI backend. `SYSTEM_PROMPT_FILE` loads skills for the `api` backend (OpenAI / Anthropic / Ollama). Both read the same markdown file format.
+> **Note**: All agents use `AI_CLI=copilot`. `COPILOT_GITHUB_TOKEN` is required — use a GitHub Personal Access Token with Copilot access. `AI_MODEL` selects the model per agent; see [GitHub Copilot model comparison](https://docs.github.com/en/copilot/reference/ai-models/model-comparison) for the full list of available models.
 >
-> **Note**: `SLACK_CHANNEL_ID` is required — without it the bot cannot post its 🟢 Ready message on startup. Use the channel ID (starts with `C`) from Step 7 of the Slack app setup. See [`docs/slack-setup.md`](../slack-setup.md) for details.
+> **Note**: `COPILOT_SKILLS_DIRS=/repo/skills` points to the `skills/` directory inside the cloned repo (`/repo` is where the container clones `GITHUB_REPO` at startup). No host copy or volume mount needed — the skills are already there.
+>
+> **Note**: `TRUSTED_AGENT_BOT_IDS` accepts entries in `"DisplayName:prefix"` format (e.g. `"GateSec:sec"`) or bare `B`-prefixed bot IDs. Names are resolved automatically at startup — no manual ID lookup needed. The `:prefix` suffix enables auto-generated team context so each agent knows how to address its teammates.
+>
+> **Note**: `SLACK_CHANNEL_ID` is required — without it the bot cannot post its 🟢 Ready message on startup. To find the Channel ID: click the channel name at the top of the channel → **Channel details** opens → the ID is shown at the bottom of the panel (starts with `C`). See [`docs/guides/slack-setup.md`](slack-setup.md) for the full single-agent setup guide.
 
 ---
 
-## Step 4 — Docker Compose
+## Step 5 — Docker Compose
 
 ```yaml
 # docker-compose.multi-agent.yml
@@ -170,8 +321,7 @@ services:
     env_file: .env.dev
     volumes:
       - repo_dev:/repo
-      - data_dev:/data
-      - ./skills/dev-agent.md:/skills/dev-agent.md:ro
+      - ./data/dev:/data
     labels:
       agentgate.agent: dev
 
@@ -181,8 +331,7 @@ services:
     env_file: .env.sec
     volumes:
       - repo_sec:/repo
-      - data_sec:/data
-      - ./skills/sec-agent.md:/skills/sec-agent.md:ro
+      - ./data/sec:/data
     labels:
       agentgate.agent: sec
 
@@ -192,25 +341,23 @@ services:
     env_file: .env.docs
     volumes:
       - repo_docs:/repo
-      - data_docs:/data
-      - ./skills/docs-agent.md:/skills/docs-agent.md:ro
+      - ./data/docs:/data
     labels:
       agentgate.agent: docs
 
 volumes:
   repo_dev:
-  data_dev:
   repo_sec:
-  data_sec:
   repo_docs:
-  data_docs:
 ```
 
-Each agent has its own named volumes so histories and repo clones are fully isolated.
+Each agent has its own named volume for `/repo` (the cloned git repo) and its own local `./data/<agent>/` folder for `/data` (SQLite history DB, logs). The three `data/` folders are fully isolated — no write conflicts between agents.
+
+Skills files (`skills/`) live inside the cloned repo at `/repo/skills/` — no host copy needed. `COPILOT_SKILLS_DIRS=/repo/skills` points there directly.
 
 ---
 
-## Step 5 — Launch and Verify
+## Step 6 — Launch and Verify
 
 ```bash
 # Launch all three agents
@@ -266,4 +413,4 @@ Non-negotiable constraints.
 Step-by-step process for typical tasks.
 ```
 
-For the Copilot backend, all files in `COPILOT_SKILLS_DIRS` are loaded at subprocess spawn time — just edit the file, no restart needed. For the `api` backend, `SYSTEM_PROMPT_FILE` is read at container startup — restart the container after editing the file.
+For the Copilot backend, skills are loaded from `COPILOT_SKILLS_DIRS` at subprocess spawn time. Since they live in the cloned repo at `/repo/skills/`, you can update them with a `dev sync` (git pull) without rebuilding — just restart the container after syncing.

@@ -43,6 +43,11 @@ def _make_settings(
     bot.confirm_destructive = confirm_destructive
     bot.skip_confirm_keywords = skip_confirm_keywords or []
     bot.prefix_only = prefix_only
+    bot.system_prompt = ""
+    bot.ai_timeout_secs = 0
+    bot.thinking_slow_threshold_secs = 15
+    bot.thinking_update_secs = 30
+    bot.ai_timeout_warn_secs = 60
     slack = MagicMock(spec=SlackConfig)
     slack.slack_bot_token = slack_bot_token
     slack.slack_app_token = slack_app_token
@@ -157,15 +162,17 @@ class TestCommandRouting:
             await bot._on_message(_make_event(text="gate git"), say, client)
         assert say.call_count >= 1
 
-    async def test_unknown_subcommand_shows_help(self):
-        bot = _make_bot()
+    async def test_unknown_subcommand_forwarded_to_ai(self):
+        backend = _make_backend(response="Sure!")
+        bot = _make_bot(backend=backend)
         say = _make_say()
         client = _make_client()
-        await bot._on_message(_make_event(text="gate unknowncmd"), say, client)
-        # Should send error + help
-        assert say.call_count >= 1
-        all_text = " ".join(str(c) for c in say.call_args_list)
-        assert "Unknown" in all_text or "help" in all_text.lower()
+        with patch("src.platform.common.history.get_history", AsyncMock(return_value=[])), \
+             patch("src.platform.common.history.build_context", return_value="unknowncmd arg1"), \
+             patch("src.platform.common.history.add_exchange", AsyncMock()):
+            await bot._on_message(_make_event(text="gate unknowncmd arg1"), say, client)
+        # Unknown subcommand should be forwarded to AI, not show "Unknown command"
+        backend.send.assert_awaited_once()
 
     async def test_non_prefix_message_forwarded_to_ai(self):
         backend = _make_backend(response="Great!")
@@ -235,7 +242,65 @@ class TestCommandRouting:
         say.assert_not_awaited()
 
 
-# ── cmd_run ───────────────────────────────────────────────────────────────────
+# ── _resolve_trusted_ids ──────────────────────────────────────────────────────
+
+class TestResolveTrustedIds:
+    async def test_already_bot_id_passthrough(self):
+        """B-prefixed IDs are pre-populated in __init__, no API call needed."""
+        bot = _make_bot(settings=_make_settings(trusted_agent_bot_ids=["BSECAGENT1"]))
+        assert "BSECAGENT1" in bot._trusted_bot_ids
+
+    async def test_name_resolved_via_users_list(self):
+        bot = _make_bot(settings=_make_settings(trusted_agent_bot_ids=["GateSec"]))
+        assert len(bot._trusted_bot_ids) == 0  # not pre-populated (no B-prefix)
+
+        users_list_resp = {
+            "members": [
+                {
+                    "is_bot": True,
+                    "name": "gatesec",
+                    "profile": {"display_name": "GateSec", "bot_id": "BSECRESOLVED"},
+                }
+            ]
+        }
+        bot._app.client.users_list = AsyncMock(return_value=users_list_resp)
+        await bot._resolve_trusted_ids()
+        assert "BSECRESOLVED" in bot._trusted_bot_ids
+
+    async def test_unresolved_name_logs_warning(self):
+        bot = _make_bot(settings=_make_settings(trusted_agent_bot_ids=["UnknownBot"]))
+        bot._app.client.users_list = AsyncMock(return_value={"members": []})
+        await bot._resolve_trusted_ids()
+        assert len(bot._trusted_bot_ids) == 0
+
+    async def test_mixed_names_and_ids(self):
+        bot = _make_bot(
+            settings=_make_settings(trusted_agent_bot_ids=["BDEVAGENT1", "GateSec"])
+        )
+        assert "BDEVAGENT1" in bot._trusted_bot_ids  # pre-populated
+
+        users_list_resp = {
+            "members": [
+                {
+                    "is_bot": True,
+                    "name": "gatesec",
+                    "profile": {"display_name": "GateSec", "bot_id": "BSECRESOLVED"},
+                }
+            ]
+        }
+        bot._app.client.users_list = AsyncMock(return_value=users_list_resp)
+        await bot._resolve_trusted_ids()
+        assert "BDEVAGENT1" in bot._trusted_bot_ids
+        assert "BSECRESOLVED" in bot._trusted_bot_ids
+
+    async def test_api_failure_does_not_raise(self):
+        bot = _make_bot(settings=_make_settings(trusted_agent_bot_ids=["GateSec"]))
+        bot._app.client.users_list = AsyncMock(side_effect=Exception("API error"))
+        await bot._resolve_trusted_ids()  # should not raise
+        assert len(bot._trusted_bot_ids) == 0
+
+
+
 
 class TestCmdRun:
     async def test_run_normal_command(self):

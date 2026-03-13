@@ -108,14 +108,16 @@ class TestSend:
         assert result == "Hello!"
 
     @pytest.mark.asyncio
-    async def test_send_timeout_returns_error(self, tmp_path, monkeypatch):
+    async def test_send_cancelled_error_kills_proc(self, tmp_path, monkeypatch):
+        """CancelledError inside send() must kill the subprocess and re-raise."""
         monkeypatch.setattr("src.ai.session.REPO_DIR", tmp_path)
         proc = MagicMock()
-        proc.terminate = MagicMock()
-        proc.communicate = AsyncMock(side_effect=asyncio.TimeoutError())
+        proc.kill = MagicMock()
+        proc.communicate = AsyncMock(side_effect=asyncio.CancelledError())
         with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)):
-            result = await CopilotSession().send("hi")
-        assert "timed out" in result
+            with pytest.raises(asyncio.CancelledError):
+                await CopilotSession().send("hi")
+        proc.kill.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_send_exception_returns_error(self, tmp_path, monkeypatch):
@@ -163,4 +165,78 @@ class TestStream:
 
 def test_close_is_noop():
     CopilotSession().close()  # must not raise
+
+
+# ── send error paths ──────────────────────────────────────────────────────────
+
+class TestSendErrorPaths:
+    async def test_send_nonzero_returncode_returns_error(self, tmp_path, monkeypatch):
+        """Non-zero returncode in send() returns a formatted error string."""
+        monkeypatch.setattr("src.ai.session.REPO_DIR", tmp_path)
+        proc = MagicMock()
+        proc.communicate = AsyncMock(return_value=(b"", b"something went wrong"))
+        proc.returncode = 1
+        with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)):
+            result = await CopilotSession().send("hi")
+        assert "Copilot error" in result
+        assert "rc=1" in result
+
+    async def test_send_cancelled_error_kill_raises_is_swallowed(self, tmp_path, monkeypatch):
+        """If proc.kill() itself raises during CancelledError, the inner exception is swallowed."""
+        monkeypatch.setattr("src.ai.session.REPO_DIR", tmp_path)
+        proc = MagicMock()
+        proc.kill = MagicMock(side_effect=OSError("no such process"))
+        proc.communicate = AsyncMock(side_effect=asyncio.CancelledError())
+        with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)):
+            with pytest.raises(asyncio.CancelledError):
+                await CopilotSession().send("hi")
+        # kill() was attempted even though it raised
+        proc.kill.assert_called_once()
+
+
+# ── stream error paths ────────────────────────────────────────────────────────
+
+class TestStreamErrorPaths:
+    async def test_stream_drains_remaining_after_stats_marker(self, tmp_path, monkeypatch):
+        """Lines after the stats marker are drained (not yielded) to cover line 78."""
+        monkeypatch.setattr("src.ai.session.REPO_DIR", tmp_path)
+        # Two chunks: content with marker, then extra junk that should be drained
+        lines = [
+            b"Hi!\n\nTotal usage est:        1 Premium request\n",
+            b"this should be drained and never yielded\n",
+        ]
+        proc = _FakeProcess(lines)
+        proc.wait = AsyncMock(return_value=0)
+        with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)):
+            result = "".join([c async for c in CopilotSession().stream("q")])
+        assert "drained" not in result
+        assert "Total usage est" not in result
+
+    async def test_stream_exception_inside_loop_yields_error(self, tmp_path, monkeypatch):
+        """Exception raised during stdout iteration (after _spawn) yields an error string."""
+        monkeypatch.setattr("src.ai.session.REPO_DIR", tmp_path)
+
+        class _BrokenStdout:
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                raise RuntimeError("pipe broken")
+
+        proc = MagicMock()
+        proc.stdout = _BrokenStdout()
+        proc.wait = AsyncMock(return_value=0)
+        with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)):
+            chunks = [c async for c in CopilotSession().stream("q")]
+        assert any("Session error" in c for c in chunks)
+
+    async def test_stream_nonzero_returncode_appends_warning(self, tmp_path, monkeypatch):
+        """When stream finishes but returncode != 0, a warning chunk is appended."""
+        monkeypatch.setattr("src.ai.session.REPO_DIR", tmp_path)
+        proc = _FakeProcess([b"partial output\n"], returncode=2)
+        proc.wait = AsyncMock(return_value=2)
+        with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)):
+            chunks = [c async for c in CopilotSession().stream("q")]
+        combined = "".join(chunks)
+        assert "rc=2" in combined
 

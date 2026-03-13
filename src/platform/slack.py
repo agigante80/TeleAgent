@@ -20,14 +20,17 @@ Commands are triggered by messages starting with the bot prefix (default: "gate"
 All other messages are forwarded to the active AI backend.
 Voice/audio file uploads are transcribed and forwarded to the AI.
 """
+import asyncio
 import logging
 import time
+from contextlib import suppress
 
 from src import executor, repo, transcriber as transcriber_mod
 from src.ai import factory as ai_factory
 from src.ai.adapter import AICLIBackend
 from src.config import Settings, VERSION
 from src.platform import common
+from src.platform.common import thinking_ticker
 from src.ready_msg import build_ready_message, ai_label as _ai_label
 
 logger = logging.getLogger(__name__)
@@ -75,6 +78,22 @@ class SlackBot:
         self._active_ai: dict[str, float] = {}
         self._confirm_destructive: bool = settings.bot.confirm_destructive
         self._transcriber = _init_transcriber(settings)
+        # Parse TRUSTED_AGENT_BOT_IDS entries as "Name:prefix" or "Name" or "B-prefixed-id".
+        # B-prefixed entries are pre-populated; name-based entries are resolved at startup.
+        import re
+        _bot_id_re = re.compile(r"^B[A-Z0-9]{6,}$")
+        self._trusted_bot_ids: set[str] = set()
+        self._agent_name_prefix: list[tuple[str, str]] = []  # [(display_name, prefix)]
+        for entry in settings.slack.trusted_agent_bot_ids:
+            name, _, prefix = entry.partition(":")
+            if _bot_id_re.match(name):
+                self._trusted_bot_ids.add(name)
+            else:
+                self._agent_name_prefix.append((name, prefix))
+        # Bot self-identification — filled in at startup via auth.test
+        self._bot_user_id: str = ""      # U-prefixed, used for @mention detection
+        self._bot_display_name: str = "" # e.g. "GateCode"
+        self._team_context: str = ""     # Prepended to every AI prompt
 
         self._app = AsyncApp(token=settings.slack.slack_bot_token)
         self._register_handlers()
@@ -104,18 +123,51 @@ class SlackBot:
         last_edit = time.monotonic()
         throttle = self._settings.bot.stream_throttle_secs
         max_chars = self._settings.bot.max_output_chars
+        cfg = self._settings.bot
+        first_chunk = True
 
-        async for chunk in self._backend.stream(prompt):
-            accumulated += chunk
-            now = time.monotonic()
-            if now - last_edit >= throttle:
-                display = (
-                    accumulated[-max_chars:]
-                    if len(accumulated) > max_chars
-                    else accumulated
-                )
-                await self._edit(client, channel, ts, display + " ▌")
-                last_edit = now
+        ticker = asyncio.create_task(
+            thinking_ticker(
+                edit_fn=lambda text: self._edit(client, channel, ts, text),
+                slow_threshold=cfg.thinking_slow_threshold_secs,
+                update_interval=cfg.thinking_update_secs,
+                timeout_secs=cfg.ai_timeout_secs,
+                warn_before_secs=cfg.ai_timeout_warn_secs,
+            )
+        )
+
+        async def _stream_body() -> None:
+            nonlocal accumulated, last_edit, first_chunk
+            async for chunk in self._backend.stream(prompt):
+                if first_chunk:
+                    ticker.cancel()
+                    first_chunk = False
+                accumulated += chunk
+                now = time.monotonic()
+                if now - last_edit >= throttle:
+                    display = (
+                        accumulated[-max_chars:]
+                        if len(accumulated) > max_chars
+                        else accumulated
+                    )
+                    await self._edit(client, channel, ts, display + " ▌")
+                    last_edit = now
+
+        try:
+            if cfg.ai_timeout_secs > 0:
+                await asyncio.wait_for(_stream_body(), timeout=cfg.ai_timeout_secs)
+            else:
+                await _stream_body()
+        except asyncio.TimeoutError:
+            await self._edit(
+                client, channel, ts,
+                f"⚠️ Stream cancelled after {cfg.ai_timeout_secs}s."
+            )
+            return ""
+        finally:
+            ticker.cancel()
+            with suppress(asyncio.CancelledError):
+                await ticker
 
         final = (
             accumulated[-max_chars:]
@@ -134,12 +186,47 @@ class SlackBot:
             prompt = await common.build_prompt(
                 text, channel, self._settings, self._backend
             )
+            # Prepend auto-generated team context and optional SYSTEM_PROMPT
+            context_parts: list[str] = []
+            if self._team_context:
+                context_parts.append(self._team_context)
+            sp = self._settings.bot.system_prompt.strip()
+            if sp:
+                context_parts.append(sp)
+            if context_parts:
+                prompt = "\n\n".join(context_parts) + "\n\n" + prompt
             if self._settings.bot.stream_responses:
                 response = await self._stream_to_slack(say, client, channel, prompt)
             else:
                 resp = await say(_THINKING)
                 ts = resp["ts"]
-                response = await self._backend.send(prompt)
+                cfg = self._settings.bot
+                ticker = asyncio.create_task(
+                    thinking_ticker(
+                        edit_fn=lambda text: self._edit(client, channel, ts, text),
+                        slow_threshold=cfg.thinking_slow_threshold_secs,
+                        update_interval=cfg.thinking_update_secs,
+                        timeout_secs=cfg.ai_timeout_secs,
+                        warn_before_secs=cfg.ai_timeout_warn_secs,
+                    )
+                )
+                try:
+                    if cfg.ai_timeout_secs > 0:
+                        response = await asyncio.wait_for(
+                            self._backend.send(prompt), timeout=cfg.ai_timeout_secs
+                        )
+                    else:
+                        response = await self._backend.send(prompt)
+                except asyncio.TimeoutError:
+                    await self._edit(
+                        client, channel, ts,
+                        f"⚠️ Request cancelled after {cfg.ai_timeout_secs}s."
+                    )
+                    return
+                finally:
+                    ticker.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await ticker
                 response = await executor.summarize_if_long(
                     response, self._settings.bot.max_output_chars, self._backend
                 )
@@ -173,8 +260,7 @@ class SlackBot:
 
         # Trusted agent messages (agent-to-agent): only process prefix commands, never AI pipeline
         if bot_id:
-            trusted = self._settings.slack.trusted_agent_bot_ids
-            if bot_id not in trusted:
+            if bot_id not in self._trusted_bot_ids:
                 return
             p = self._p
             lower = text.lower()
@@ -197,6 +283,12 @@ class SlackBot:
         if not text:
             return
 
+        # @mention trigger: "<@UXXXXXXX> …" bypasses prefix and PREFIX_ONLY restrictions
+        if self._bot_user_id and f"<@{self._bot_user_id}>" in text:
+            mention_text = text.replace(f"<@{self._bot_user_id}>", "").strip()
+            await self._run_ai_pipeline(say, client, mention_text or text, channel)
+            return
+
         p = self._p
         lower = text.lower()
         # Parse "{p} <subcommand> [args…]" prefix
@@ -205,7 +297,12 @@ class SlackBot:
             sub = parts[1].lower() if len(parts) > 1 else ""
             args_str = parts[2] if len(parts) > 2 else ""
             args = args_str.split() if args_str else []
-            await self._dispatch(sub, args, say, client, channel)
+            # Route known utility commands to dispatcher; everything else goes to AI
+            if sub in {"run", "sync", "git", "diff", "log", "status", "clear", "restart", "confirm", "info", "help"} or not sub:
+                await self._dispatch(sub, args, say, client, channel)
+            else:
+                # Prefix was used as an addressing token — forward remainder to AI
+                await self._run_ai_pipeline(say, client, text[len(p):].strip(), channel)
         elif self._settings.bot.prefix_only:
             return  # Silently ignore unprefixed messages (PREFIX_ONLY=true)
         else:
@@ -537,10 +634,102 @@ class SlackBot:
 
     # ── Startup ───────────────────────────────────────────────────────────
 
+    async def _resolve_trusted_ids(self) -> None:
+        """Resolve name-based entries in TRUSTED_AGENT_BOT_IDS to bot_ids via users.list.
+
+        Also looks up this bot's own display name (for team context) using the
+        user_id obtained from auth.test at startup.
+        """
+        if not self._agent_name_prefix and not self._bot_user_id:
+            self._build_team_context()
+            return
+
+        try:
+            resp = await self._app.client.users_list()
+            name_to_bot_id: dict[str, str] = {}
+            for member in resp.get("members", []):
+                if not member.get("is_bot"):
+                    continue
+                profile = member.get("profile", {})
+                bot_id = profile.get("bot_id", "")
+                display_name = profile.get("display_name") or member.get("name", "")
+                # Match our own user_id to learn our display name (only if not already set)
+                if self._bot_user_id and member.get("id") == self._bot_user_id and display_name:
+                    if not self._bot_display_name:
+                        self._bot_display_name = display_name
+                if not bot_id:
+                    continue
+                for key in (display_name, member.get("name", "")):
+                    if key:
+                        name_to_bot_id[key.lower()] = bot_id
+        except Exception:
+            logger.exception("Failed to call users.list for trusted agent resolution")
+            self._build_team_context()
+            return
+
+        for name, _prefix in self._agent_name_prefix:
+            resolved = name_to_bot_id.get(name.lower())
+            if resolved:
+                self._trusted_bot_ids.add(resolved)
+                logger.info("Resolved trusted agent %r → %s", name, resolved)
+            else:
+                logger.warning(
+                    "Could not resolve trusted agent name %r — not found in workspace."
+                    " Check TRUSTED_AGENT_BOT_IDS and ensure the app is installed.",
+                    name,
+                )
+
+        self._build_team_context()
+
+    def _build_team_context(self) -> None:
+        """Build the team context string prepended to every AI prompt."""
+        own_name = self._bot_display_name or self._p.capitalize()
+        lines = [f"You are {own_name} (prefix: {self._p})."]
+        if self._agent_name_prefix:
+            lines.append("Your team in this Slack workspace:")
+            for name, prefix in self._agent_name_prefix:
+                if prefix:
+                    lines.append(
+                        f"  - {name} (prefix: {prefix})"
+                        f" — users address them with: {prefix} <message>"
+                    )
+                else:
+                    lines.append(f"  - {name}")
+        repo = self._settings.github.github_repo
+        branch = self._settings.github.branch
+        if repo:
+            lines.append(f"Repo: {repo} | Branch: {branch}")
+        lines.append(
+            "Formatting (Slack mrkdwn): *bold* (NOT **bold**), _italic_, "
+            "`inline code`, ```code blocks```, >blockquote, - bullet list"
+        )
+        self._team_context = "\n".join(lines)
+        logger.info("Team context: %s", self._team_context.replace("\n", " | "))
+
     async def run_async(self) -> None:
         """Start the Slack Socket Mode connection."""
         from slack_bolt.adapter.socket_mode.async_handler import AsyncSocketModeHandler
 
+        # Get bot's own identity for @mention detection and team context
+        try:
+            auth = await self._app.client.auth_test()
+            self._bot_user_id = auth.get("user_id", "")
+            # Try users.info for the proper display name (requires users:read scope)
+            try:
+                info = await self._app.client.users_info(user=self._bot_user_id)
+                profile = info.get("user", {}).get("profile", {})
+                self._bot_display_name = (
+                    profile.get("real_name")
+                    or profile.get("display_name")
+                    or auth.get("user", "")
+                )
+            except Exception:
+                self._bot_display_name = auth.get("user", "")
+            logger.info("Bot identity: user_id=%s name=%s", self._bot_user_id, self._bot_display_name)
+        except Exception:
+            logger.exception("Failed to call auth.test for bot identity")
+
+        await self._resolve_trusted_ids()
         handler = AsyncSocketModeHandler(
             self._app, self._settings.slack.slack_app_token
         )
@@ -552,7 +741,7 @@ class SlackBot:
         if not channel:
             logger.info("SLACK_CHANNEL_ID not set — skipping ready message.")
             return
-        text = build_ready_message(self._settings, VERSION, self._p)
+        text = build_ready_message(self._settings, VERSION, self._p, use_slash=False)
         if client is None:
             client = self._app.client
         await client.chat_postMessage(channel=channel, text=text)

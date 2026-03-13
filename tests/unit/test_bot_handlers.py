@@ -1,4 +1,5 @@
 """Unit tests for bot.py handler methods in _BotHandlers."""
+import asyncio
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -32,6 +33,10 @@ def _make_settings(
     bot.confirm_destructive = confirm_destructive
     bot.skip_confirm_keywords = skip_confirm_keywords or []
     bot.image_tag = ""
+    bot.ai_timeout_secs = 0
+    bot.thinking_slow_threshold_secs = 15
+    bot.thinking_update_secs = 30
+    bot.ai_timeout_warn_secs = 60
     gh = MagicMock(spec=GitHubConfig)
     gh.github_repo = "owner/repo"
     gh.branch = "main"
@@ -612,3 +617,178 @@ class TestCmdLog:
         await h.cmd_log(update, ctx)
         text = update.effective_message.reply_text.call_args[0][0]
         assert "Usage" in text
+
+
+# ── Streaming path in _run_ai_pipeline ───────────────────────────────────────
+
+class TestRunAiPipelineStreaming:
+    async def test_streaming_path_invokes_stream_to_telegram(self):
+        """When stream_responses=True, _stream_to_telegram is called (line 167)."""
+        settings = _make_settings(stream=True, history_enabled=False)
+        backend = _make_backend(stateful=False, response="streamed reply")
+        h = _BotHandlers(settings, backend, start_time=0.0)
+        update = _make_update()
+
+        with patch("src.bot._stream_to_telegram", new=AsyncMock(return_value="streamed reply")) as mock_stream, \
+             patch("src.bot.history.add_exchange", new=AsyncMock()):
+            await h._run_ai_pipeline(update, "hello", "99999")
+
+        mock_stream.assert_awaited_once()
+
+    async def test_non_streaming_with_timeout_secs_uses_wait_for(self):
+        """When ai_timeout_secs > 0 and not streaming, asyncio.wait_for is used (line 190)."""
+        settings = _make_settings(stream=False, history_enabled=False)
+        settings.bot.ai_timeout_secs = 30
+        backend = _make_backend(stateful=True, response="ok")
+        h = _BotHandlers(settings, backend, start_time=0.0)
+        update = _make_update()
+
+        with patch("src.bot.asyncio.wait_for", new=AsyncMock(return_value="ok")) as mock_wait_for, \
+             patch("src.bot.executor.summarize_if_long", new=AsyncMock(return_value="ok")), \
+             patch("src.bot.history.add_exchange", new=AsyncMock()):
+            await h._run_ai_pipeline(update, "hello", "99999")
+
+        mock_wait_for.assert_awaited_once()
+
+    async def test_non_streaming_timeout_error_shows_warning(self):
+        """TimeoutError during non-streaming send edits message with warning (lines 196-200)."""
+        settings = _make_settings(stream=False, history_enabled=False)
+        settings.bot.ai_timeout_secs = 5
+        backend = _make_backend(stateful=True)
+        h = _BotHandlers(settings, backend, start_time=0.0)
+        update = _make_update()
+
+        with patch("src.bot.asyncio.wait_for", new=AsyncMock(side_effect=asyncio.TimeoutError())):
+            await h._run_ai_pipeline(update, "slow query", "99999")
+
+        msg_mock = update.effective_message.reply_text.return_value
+        msg_mock.edit_text.assert_awaited()
+        edit_text = msg_mock.edit_text.call_args[0][0]
+        assert "cancelled" in edit_text.lower() or "5s" in edit_text
+
+
+# ── _init_transcriber error path ─────────────────────────────────────────────
+
+class TestInitTranscriber:
+    def test_not_implemented_error_returns_none(self):
+        """NotImplementedError from create_transcriber logs a warning and returns None (lines 151-153)."""
+        settings = _make_settings()
+        backend = _make_backend()
+        with patch("src.bot.transcriber_mod.create_transcriber", side_effect=NotImplementedError("bad")):
+            h = _BotHandlers(settings, backend, start_time=0.0)
+        assert h._transcriber is None
+
+
+# ── _stream_to_telegram edit exceptions ──────────────────────────────────────
+
+class TestStreamEditExceptions:
+    async def test_edit_exception_during_streaming_is_ignored(self):
+        """Exception in edit_text during chunk streaming is silently swallowed (lines 88-89)."""
+        settings = _make_settings(stream=False)
+        backend = _make_backend()
+        update = _make_update()
+
+        msg = AsyncMock()
+        edit_calls = []
+
+        async def edit_side_effect(text):
+            edit_calls.append(text)
+            if "▌" in text:
+                raise RuntimeError("rate limited")
+
+        msg.edit_text = edit_side_effect
+        update.effective_message.reply_text = AsyncMock(return_value=msg)
+
+        async def _stream(prompt):
+            yield "A" * 100
+
+        backend.stream = _stream
+
+        with patch("src.platform.common.asyncio.sleep", AsyncMock(side_effect=asyncio.CancelledError)):
+            result = await _stream_to_telegram(
+                update, backend, "prompt", max_chars=3000,
+                throttle_secs=0.0, timeout_secs=0,
+                slow_threshold=15, update_interval=30, warn_before_secs=60,
+            )
+
+        # Should still return the content despite the edit exception
+        assert "A" in result
+
+    async def test_final_edit_exception_is_ignored(self):
+        """Exception in the final edit_text call is silently swallowed (lines 111-112)."""
+        settings = _make_settings(stream=False)
+        backend = _make_backend()
+        update = _make_update()
+
+        msg = AsyncMock()
+        call_count = [0]
+
+        async def edit_side_effect(text):
+            call_count[0] += 1
+            if "▌" not in text:  # final edit has no cursor
+                raise RuntimeError("flood control")
+
+        msg.edit_text = edit_side_effect
+        update.effective_message.reply_text = AsyncMock(return_value=msg)
+
+        async def _stream(prompt):
+            yield "hello"
+
+        backend.stream = _stream
+
+        with patch("src.platform.common.asyncio.sleep", AsyncMock(side_effect=asyncio.CancelledError)):
+            result = await _stream_to_telegram(
+                update, backend, "prompt", max_chars=3000,
+                throttle_secs=999.0, timeout_secs=0,
+                slow_threshold=15, update_interval=30, warn_before_secs=60,
+            )
+
+        assert result == "hello"
+
+
+# ── handle_voice with no audio ────────────────────────────────────────────────
+
+class TestHandleVoiceNoAudio:
+    async def test_handle_voice_returns_early_when_no_voice_or_audio(self):
+        """If voice AND audio are both None, handle_voice returns early (line 446)."""
+        settings = _make_settings()
+        backend = _make_backend()
+
+        mock_transcriber = AsyncMock()
+        mock_transcriber.transcribe = AsyncMock(return_value="hello")
+
+        with patch("src.bot.transcriber_mod.create_transcriber", return_value=AsyncMock(spec=[])):
+            h = _BotHandlers(settings, backend, start_time=0.0)
+        # Force a non-None transcriber so we get past the first guard
+        h._transcriber = mock_transcriber
+
+        update = _make_update()
+        update.effective_message.voice = None
+        update.effective_message.audio = None
+
+        await h.handle_voice(update, MagicMock())
+
+        # reply_text is called for "Transcribing..." only if we get past the None check
+        # Since voice and audio are both None, we should return early (no reply)
+        # The first reply_text was for "Disabled" which is skipped since transcriber is set.
+        # So no reply_text call for "Transcribing…"
+        calls = [str(c) for c in update.effective_message.reply_text.call_args_list]
+        assert not any("Transcribing" in c for c in calls)
+
+
+# ── build_app handler count ───────────────────────────────────────────────────
+
+class TestBuildApp:
+    def test_build_app_registers_expected_handlers(self):
+        """build_app() registers all expected command + message handlers (lines 472-494)."""
+        settings = _make_settings()
+        settings.telegram.bot_token = "123:fake-token"
+        backend = _make_backend()
+
+        with patch("src.bot.Application") as MockApp:
+            mock_app_instance = MagicMock()
+            MockApp.builder.return_value.token.return_value.build.return_value = mock_app_instance
+            build_app(settings, backend, 0.0)
+
+        # 12 CommandHandlers + 1 CallbackQueryHandler + 2 MessageHandlers = 16
+        assert mock_app_instance.add_handler.call_count == 16

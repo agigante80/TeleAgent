@@ -1,6 +1,6 @@
 """Unit tests for ai/direct.py — DirectAPIBackend."""
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from src.ai.direct import DirectAPIBackend
 
@@ -168,3 +168,151 @@ class TestSystemPrompt:
 
         call_kwargs = mock_client.messages.create.call_args
         assert "system" not in call_kwargs.kwargs
+
+
+# ── Client lazy-init ──────────────────────────────────────────────────────────
+
+class TestClientLazyInit:
+    def test_openai_client_created_on_first_call(self):
+        """_get_openai_client() lazily imports and creates AsyncOpenAI."""
+        backend = _make_backend("openai", api_key="sk-test")
+        mock_client = MagicMock()
+        with patch("src.ai.direct.AsyncOpenAI", return_value=mock_client, create=True):
+            # Temporarily remove cached client so the branch runs
+            backend._openai_client = None
+            from openai import AsyncOpenAI  # noqa: ensure module available
+            with patch("src.ai.direct.DirectAPIBackend._get_openai_client") as _:
+                pass  # just ensure the import path works
+        # Direct path: patch openai inside the method
+        backend._openai_client = None
+        fake_openai_class = MagicMock(return_value=mock_client)
+        import sys
+        import types
+        fake_mod = types.ModuleType("openai")
+        fake_mod.AsyncOpenAI = fake_openai_class
+        original = sys.modules.get("openai")
+        sys.modules["openai"] = fake_mod
+        try:
+            result = backend._get_openai_client()
+        finally:
+            if original is not None:
+                sys.modules["openai"] = original
+            else:
+                del sys.modules["openai"]
+        assert result is mock_client
+        fake_openai_class.assert_called_once_with(api_key="sk-test")
+
+    def test_anthropic_client_created_on_first_call(self):
+        """_get_anthropic_client() lazily imports and creates AsyncAnthropic."""
+        backend = _make_backend("anthropic", api_key="sk-ant-test")
+        backend._anthropic_client = None
+        mock_client = MagicMock()
+        fake_anthropic_class = MagicMock(return_value=mock_client)
+        import sys
+        import types
+        fake_mod = types.ModuleType("anthropic")
+        fake_mod.AsyncAnthropic = fake_anthropic_class
+        original = sys.modules.get("anthropic")
+        sys.modules["anthropic"] = fake_mod
+        try:
+            result = backend._get_anthropic_client()
+        finally:
+            if original is not None:
+                sys.modules["anthropic"] = original
+            else:
+                del sys.modules["anthropic"]
+        assert result is mock_client
+        fake_anthropic_class.assert_called_once_with(api_key="sk-ant-test")
+
+    def test_anthropic_client_cached_on_second_call(self):
+        """_get_anthropic_client() returns the same instance on repeated calls."""
+        backend = _make_backend("anthropic")
+        first = MagicMock()
+        backend._anthropic_client = first
+        result = backend._get_anthropic_client()
+        assert result is first
+
+
+# ── Anthropic stream ──────────────────────────────────────────────────────────
+
+class TestAnthropicStream:
+    async def test_anthropic_stream_yields_chunks(self):
+        """_anthropic_stream yields chunks from stream.text_stream."""
+        backend = _make_backend("anthropic", model="claude-3-5-sonnet-20241022")
+        backend._messages = [{"role": "user", "content": "hello"}]
+
+        async def _fake_text_stream():
+            for chunk in ["Hello", ", ", "world"]:
+                yield chunk
+
+        mock_stream = MagicMock()
+        mock_stream.text_stream = _fake_text_stream()
+        mock_ctx = MagicMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_stream)
+        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        mock_client = MagicMock()
+        mock_client.messages.stream = MagicMock(return_value=mock_ctx)
+        backend._anthropic_client = mock_client
+
+        chunks = []
+        async for chunk in backend._anthropic_stream():
+            chunks.append(chunk)
+
+        assert chunks == ["Hello", ", ", "world"]
+
+
+class TestOpenAIClientBaseUrl:
+    def test_openai_client_includes_base_url_when_set(self):
+        """_get_openai_client() passes base_url kwarg when base_url is non-empty (line 74)."""
+        import sys
+        import types
+        backend = DirectAPIBackend(
+            provider="openai", api_key="sk-test", model="gpt-4o",
+            base_url="http://localhost:11434/v1"
+        )
+        backend._openai_client = None
+        mock_client = MagicMock()
+        fake_openai_class = MagicMock(return_value=mock_client)
+        fake_mod = types.ModuleType("openai")
+        fake_mod.AsyncOpenAI = fake_openai_class
+        original = sys.modules.get("openai")
+        sys.modules["openai"] = fake_mod
+        try:
+            result = backend._get_openai_client()
+        finally:
+            if original is not None:
+                sys.modules["openai"] = original
+            else:
+                del sys.modules["openai"]
+        call_kwargs = fake_openai_class.call_args[1]
+        assert call_kwargs.get("base_url") == "http://localhost:11434/v1"
+
+
+class TestAnthropicStreamWithSystemPrompt:
+    async def test_anthropic_stream_sends_system_param_when_set(self):
+        """_anthropic_stream includes system kwarg when system_prompt is set (line 127)."""
+        backend = DirectAPIBackend(
+            provider="anthropic", api_key="sk-ant", model="claude-3-5-sonnet-20241022",
+            system_prompt="Be concise."
+        )
+        backend._messages = [{"role": "user", "content": "hello"}]
+
+        async def _fake_text_stream():
+            yield "response"
+
+        mock_stream = MagicMock()
+        mock_stream.text_stream = _fake_text_stream()
+        mock_ctx = MagicMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_stream)
+        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        mock_client = MagicMock()
+        mock_client.messages.stream = MagicMock(return_value=mock_ctx)
+        backend._anthropic_client = mock_client
+
+        chunks = [c async for c in backend._anthropic_stream()]
+
+        assert chunks == ["response"]
+        call_kwargs = mock_client.messages.stream.call_args[1]
+        assert call_kwargs.get("system") == "Be concise."
