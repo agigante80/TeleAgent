@@ -1,0 +1,41 @@
+name: Finalize feature
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  finalize:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - name: Extract feature doc path from PR body
+        id: extract
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const body = pr.body || '';
+            const m = body.match(/implements:\s*(docs\/features\/[^\s]+)/i);
+            if (!m) throw new Error('No implements: docs/features/<file> found in PR body');
+            return { feature: m[1] };
+
+      - name: Run finalizer
+        env:
+          FEATURE_DOC: ${{ steps.extract.outputs.feature }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python scripts/finalize_feature.py "$FEATURE_DOC"
+
+      - name: Create Release
+        if: success()
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v$(cat VERSION)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
