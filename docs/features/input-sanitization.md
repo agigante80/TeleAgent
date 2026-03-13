@@ -36,7 +36,7 @@ Affected users: every self-hosted deployment. The shell injection requires an au
 | Telegram auth | `src/bot.py:31-38` (`_is_allowed`) | Compares `chat_id` to `settings.telegram.chat_id`; skips user check when `allowed_users` is empty |
 | Slack auth | `src/platform/common.py:65-72` (`is_allowed_slack`) | Skips channel check when `slack_channel_id` is `""`; skips user check when `allowed_users` is empty |
 | Telegram diff | `src/bot.py:259-274` (`cmd_diff`) | Interpolates unsanitized `arg` into `f"git diff {ref} ..."` passed to `executor.run_shell()` |
-| Slack diff | `src/platform/slack.py:405-419` (`_cmd_diff`) | Same unsanitized interpolation as Telegram |
+| Slack diff | `src/platform/slack.py:538-552` (`_cmd_diff`) | Same unsanitized interpolation as Telegram |
 | Shell executor | `src/executor.py:36-38` (`run_shell`) | Uses `asyncio.create_subprocess_shell()` — executes the string through `/bin/sh` |
 | Config defaults | `src/config.py:10` (`TelegramConfig.chat_id`) | Defaults to `""` |
 | Config defaults | `src/config.py:19` (`SlackConfig.slack_channel_id`) | Defaults to `""` |
@@ -345,7 +345,9 @@ This is a security fix with no user-visible API change (no new env vars, no new 
 
 5. **Slack thread scope** — Not affected; the fix is in command parsing, not message posting.
 
-6. **Other commands using `run_shell()`** — `cmd_log` uses a validated integer (`n`). The AI pipeline passes the full user prompt through the AI backend, not through a shell. No other commands interpolate user input into shell strings. A future audit should verify this remains true as new commands are added.
+6. **Other commands using `run_shell()`** — `cmd_log` uses a validated integer (`n`) with `int()` conversion and bounds-clamping (`max(1, min(n, 200))`), so it is safe. `cmd_run` / `_cmd_run` (`src/bot.py:221-245`, `src/platform/slack.py:475-523`) _do_ interpolate the full user input into `run_shell()` — but this is *by design*: `gate run` is the "execute arbitrary shell command" feature. It is protected by the `@_requires_auth` guard and the `is_destructive()` + `is_exempt()` confirmation prompt for dangerous commands. This document's scope is limited to `gate diff`, where user input is *unintentionally* unsanitized. A future audit should verify that no other command introduces *unintentional* shell interpolation as new commands are added.
+
+7. **`cmd_run` is NOT in scope** — Although `cmd_run` passes user input directly to the shell, it is the *intended* purpose of that command. The security boundary is the auth guard (only authorized users can run it) and the destructive-command confirmation dialog. Hardening `cmd_run` (e.g., restricting allowed commands) would be a separate roadmap item if desired.
 
 ---
 

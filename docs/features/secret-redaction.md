@@ -302,7 +302,8 @@ class SecretRedactor:
         """If cmd is a git commit, redact secrets from the message."""
         if not self._enabled:
             return cmd
-        if "git commit" not in cmd and "git -c" not in cmd:
+        # Match common git commit invocations including `git -C <path> commit`
+        if "git commit" not in cmd and "git -c" not in cmd and "git -C" not in cmd:
             return cmd
         return self.redact(cmd)
 ```
@@ -359,19 +360,27 @@ async def _install_commit_msg_hook(settings: Settings) -> None:
     secrets = SecretRedactor._collect_secrets(settings)
     if not secrets:
         return
-    # Generate a sed script that replaces each secret with [REDACTED]
-    sed_cmds = " ".join(
-        f"-e 's|{re.escape(s)}|[REDACTED]|g'" for s in secrets
-    )
-    hook_script = f"""#!/bin/sh
-sed -i {sed_cmds} "$1"
+    # Use a Python script instead of sed to avoid escaping pitfalls.
+    # re.escape() is for Python regex, NOT for sed — secrets containing
+    # the sed delimiter (|) or backslashes would break a sed-based hook.
+    escaped_secrets = ", ".join(repr(s) for s in secrets)
+    hook_script = f"""#!/usr/bin/env python3
+import pathlib, sys
+msg_file = pathlib.Path(sys.argv[1])
+text = msg_file.read_text()
+for secret in [{escaped_secrets}]:
+    text = text.replace(secret, "[REDACTED]")
+msg_file.write_text(text)
 """
     hook_path.write_text(hook_script)
     hook_path.chmod(0o755)
     logger.info("Installed commit-msg hook for secret redaction")
 ```
 
-> **Note**: The hook uses `sed` with literal replacements. Pattern-based redaction is not
+> **Note**: The hook uses a Python script (not `sed`) to avoid shell escaping pitfalls —
+> `re.escape()` escapes for Python regex, not for `sed` patterns, and secrets containing
+> the `sed` delimiter (`|`, `/`) or backslashes would break a `sed`-based hook. Python
+> `str.replace()` is safe for arbitrary secret values. Pattern-based redaction is not
 > included in the hook to avoid over-matching in commit messages. Value-based is sufficient
 > because the AI subprocess has access only to the same env vars we know about.
 
@@ -494,13 +503,19 @@ that hardens security without breaking existing deployments.
    startup. A restart picks up any new env vars. No cleanup needed.
 
 6. **Git hook persistence** — The `commit-msg` hook is written to `REPO_DIR/.git/hooks/`.
-   If the repo is re-cloned (e.g. `gate sync`), the hook must be reinstalled. The
-   startup flow in `main.py` already runs after clone, so this is handled.
+   `gate sync` calls `repo.pull()` (fetch + merge), which does *not* wipe `.git/hooks/`,
+   so the hook persists across syncs. The hook would only be lost if the repo were
+   manually deleted and re-cloned, in which case `_install_commit_msg_hook()` in
+   `main.py` would reinstall it on the next container startup.
 
 7. **Commit messages from AI subprocess** — Copilot/Codex with `--allow-all` can run
    `git commit` directly. The `commit-msg` git hook catches these. Pattern-based
-   redaction is not in the hook (to avoid sed complexity), but value-based is sufficient
-   for known secrets.
+   redaction is not in the hook (to avoid over-matching complexity), but value-based is
+   sufficient for known secrets.
+
+8. **`git -C <path> commit` variant** — The AI may invoke `git -C /repo commit -m "..."`.
+   `redact_git_commit_cmd()` must also check for `"git -C"` in addition to `"git commit"`
+   and `"git -c"` to catch this invocation style.
 
 ---
 
