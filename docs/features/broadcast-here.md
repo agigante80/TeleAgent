@@ -31,7 +31,7 @@ Slack users can prefix any message with `<!here>` to broadcast it to all active 
 
 | Layer | Location | Current behaviour |
 |-------|----------|-------------------|
-| Incoming message routing | `src/platform/slack.py:370+` (`_handle_message`) | No detection of `<!here>` in incoming text; falls through to prefix/AI routing |
+| Incoming message routing | `src/platform/slack.py:366+` (`_on_message`) | No detection of `<!here>` in incoming text; falls through to prefix/AI routing |
 | Outgoing delegation sanitisation | `src/platform/slack.py:263` (`_post_delegations`) | `_SLACK_SPECIAL_MENTION_RE` strips `<!here>` from *outgoing* delegation posts — correct security measure, must stay |
 | Regex definition | `src/platform/slack.py:56` | `_SLACK_SPECIAL_MENTION_RE = re.compile(r"<!(channel|here|everyone)>")` — already exists, reusable |
 
@@ -170,9 +170,11 @@ No new env vars. This feature is always-on for authenticated Slack users.
 
 ## Implementation Steps
 
-### Step 1 — `src/platform/slack.py`: add broadcast detection in `_handle_message`
+### Step 1 — `src/platform/slack.py`: add broadcast detection in `_on_message`
 
-Insert **after** the `_is_allowed()` / file-handling / empty-text guards, and **before** the `@mention` trigger (currently at line ~422):
+Insert **after** the `_is_allowed()` (line 411) / file-handling (415) / empty-text (418) guards, and **before** the `@mention` trigger (line 422).
+
+> *Important*: the subcommand set `{"run", "sync", …}` is now duplicated in three places: `_dispatch` table (line 461), trusted-bot routing (line 403), and this block. Extract to a module-level constant (e.g. `_KNOWN_SUBS`) shared by all three to prevent drift.
 
 ```python
 # Broadcast trigger: <!here>, <!channel>, or <!everyone> → strip and re-route
@@ -198,7 +200,7 @@ if _SLACK_SPECIAL_MENTION_RE.search(text):
     return
 ```
 
-Exact insertion point: after line ~421 (after the `if not text: return` guard), before the `@mention` trigger block.
+Exact insertion point: after line 418 (`if not text: return` guard), before line 422 (`@mention` trigger block).
 
 ---
 
@@ -285,6 +287,20 @@ Add to the Slack features section:
 ## Version Bump
 
 **MINOR** — new feature, no breaking changes, `0.11.x` → `0.12.0`.
+
+---
+
+## Security Considerations
+
+1. *Delegation amplification* — A broadcast reaches all bots simultaneously. Each bot's AI response may contain `[DELEGATE: ...]` blocks, so a single `<!here>` message can produce up to 3× the normal delegation volume. This is bounded by the existing `_MAX_DELEGATIONS` cap (per response) and the 1-hop delegation chain limit — but operators should be aware of the multiplier effect. No code change needed; the existing caps are sufficient.
+
+2. *Subcommand set duplication* — The feature doc's code sample hardcodes `{"run", "sync", "git", "diff", "log", "status", "clear", "restart", "confirm", "info", "help"}`. This is the _third_ copy of this set (after `_dispatch` table at line 461 and trusted-bot routing at line 403). If a new subcommand is added to `_dispatch` but not to the broadcast block, it would silently fall through to the AI pipeline instead of dispatching. *Recommendation*: extract to a module-level `_KNOWN_SUBS` constant shared by all three call sites.
+
+3. *Destructive command safety preserved* — `<!here> dev run rm -rf /` routes to `_dispatch("run", ...)` → `_cmd_run` → `is_destructive()` check → confirmation flow. The existing safety net is not bypassed by broadcast.
+
+4. *Outgoing re-trigger prevention* — `_post_delegations` (line 262) strips `<!here>` from outgoing delegation text before posting. Bot responses go through `_reply()`, not `_on_message()`, so they cannot re-trigger broadcast. AI message events have `subtype` set, which is rejected at line 380. No re-trigger vector exists.
+
+5. *Secret redaction* — All broadcast responses flow through `_run_ai_pipeline` → `_reply()` / `_send()` / `_edit()`, which apply `SecretRedactor`. No bypass.
 
 ---
 
