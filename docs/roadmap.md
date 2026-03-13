@@ -1,6 +1,6 @@
 # AgentGate — Roadmap
 
-> Last updated: 2026-03-12
+> Last updated: 2026-03-13
 
 Items ordered by priority. Each item links to a feature doc with full design detail.
 
@@ -14,6 +14,7 @@ Items ordered by priority. Each item links to a feature doc with full design det
 | 1.2 | npm globals (`@github/copilot-cli`, `@openai/codex`) not covered by Dependabot | [→ features/npm-dependabot.md](features/npm-dependabot.md) |
 | 1.3 | History storage hardcoded to SQLite — introduce `ConversationStorage` ABC | [→ features/history-storage.md](features/history-storage.md) |
 | 1.4 | `AIConfig` mixes Copilot, Codex, and Direct API fields in one flat struct | [→ features/aiconfig-split.md](features/aiconfig-split.md) |
+| 1.5 | Shell injection in `gate diff` + auth bypass with empty `SLACK_CHANNEL_ID` | [→ features/input-sanitization.md](features/input-sanitization.md) |
 
 ---
 
