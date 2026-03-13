@@ -438,6 +438,16 @@ New env var with a safe default of `10` (preserves existing behaviour). **MINOR*
 
 ---
 
+## Security Considerations
+
+1. **Interaction with prompt injection hardening (1.6)** — When `HISTORY_TURNS > 0`, `build_context()` wraps the history block in `<HISTORY>…</HISTORY>` framing tags (added in feature 1.6). This framing is preserved because `build_prompt()` calls `history.build_context(hist, text)` regardless of `turns` value. When `HISTORY_TURNS=0`, no history is injected and no framing tags are emitted — which is correct (no history = no injection surface to frame).
+
+2. **SQL LIMIT safety** — The `LIMIT ?` in `get_history()` is parameterised (no SQL injection). Negative values are rejected at startup by `_validate_config()`. Even if bypassed programmatically, `min(limit, 100)` caps the query and SQLite treats negative `LIMIT` as returning zero rows — no data leakage.
+
+3. **No new secrets exposure** — `HISTORY_TURNS` is a plain integer config field. History content (which may contain sensitive data) is already stored in SQLite and redacted on output by the `SecretRedactor` (feature 1.7). This feature does not change what is stored, only how much is *injected*.
+
+---
+
 ## Edge Cases and Open Questions
 
 1. **`HISTORY_TURNS=0` + `HISTORY_ENABLED=true`** — History is still stored to SQLite;

@@ -33,9 +33,9 @@ Two small UX improvements to the "Still thinking…" ticker: elapsed time is sho
 | Config | `src/config.py:54` (`BotConfig`) | `ai_timeout_secs: int = 720` (comment says `0 = no timeout`) |
 | Ticker | `src/platform/common.py:11` (`thinking_ticker`) | Module-level async function, shared by both platforms |
 | Ticker | `src/platform/common.py:32` | `elapsed = int(_clock() - start)` computed each loop |
-| Ticker | `src/platform/common.py:34` | `text = f"⏳ Still thinking… ({elapsed}s) — will cancel in {remaining}s"` |
-| Ticker | `src/platform/common.py:36` | `text = f"⏳ Still thinking… ({elapsed}s)"` (non-warning branch) |
-| Ticker | `src/platform/common.py:38` | `text = f"⏳ Still thinking… ({elapsed}s)"` (timeout=0 branch) |
+| Ticker | `src/platform/common.py:36` | `text = f"⏳ Still thinking… ({elapsed}s) — will cancel in {remaining}s"` |
+| Ticker | `src/platform/common.py:38` | `text = f"⏳ Still thinking… ({elapsed}s)"` (non-warning branch) |
+| Ticker | `src/platform/common.py:40` | `text = f"⏳ Still thinking… ({elapsed}s)"` (timeout=0 branch) |
 | Tests | `tests/unit/test_thinking_ticker.py` | 6 tests; assert `"will cancel in"` in text but do NOT assert exact seconds format — safe to update format without breaking these |
 | Tests | `tests/unit/test_platform_common.py` | Tests `build_prompt`, `save_to_history`, `is_allowed_slack` — no ticker tests here |
 
@@ -295,6 +295,14 @@ Update the `AI_TIMEOUT_SECS` row in the env var table:
 ## Version Bump
 
 New env var default changes user-visible behaviour (timeout no longer fires by default). **MINOR** bump: `0.10.0` → `0.11.0`.
+
+---
+
+## Security Considerations
+
+1. **Resource exhaustion with `AI_TIMEOUT_SECS=0`** — Changing the default from `720` to `0` means an AI subprocess that hangs (e.g. Copilot CLI waiting for auth, network stall, or infinite loop) will *never* be auto-cancelled. The asyncio task, child subprocess, and any open sockets persist indefinitely. In a multi-user Slack deployment, repeated hangs could exhaust file descriptors, memory, or process slots. **Mitigation:** This is an acceptable trade-off (the doc's rationale is sound — silent cancellation is worse for most users), but `README.md` should clearly document that production deployments should set an explicit `AI_TIMEOUT_SECS` if resource constraints are a concern.
+
+2. **No injection surface** — `_format_elapsed()` takes an `int` and returns a format string with no user-controlled input. No XSS, injection, or secrets-leakage risk.
 
 ---
 

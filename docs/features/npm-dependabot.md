@@ -105,6 +105,14 @@ Dependabot will open weekly PRs when either CLI releases a new version. The PR d
 - Dependabot's `npm` ecosystem scanner reads `package.json` at the configured `directory`. Using `/` (repo root) matches the existing pip and docker entries.
 - The two Dockerfile lines already carry the comment `# pinned version (update via Dependabot)` — this change fulfils that comment.
 
+## Security Considerations
+
+1. **`runtime.py` auto-detection** — `src/runtime.py:11` lists `("package.json", ["npm", "install"])` in its `_DETECTORS`. If the cloned target repo is AgentGate itself (self-hosting scenario where `GITHUB_REPO=agigante80/AgentGate`), `runtime.py` will detect the new `package.json` at `REPO_DIR` and execute `npm install`, duplicating the globally-installed CLIs into a local `node_modules/`. This is wasteful but functionally harmless — the sentinel mechanism prevents re-running on subsequent restarts. **No code change needed**, but document in the `package.json` description that the file is a Dependabot manifest and not intended for `npm install`.
+
+2. **Supply chain risk with npm install scripts** — `@github/copilot` and `@openai/codex` are AI backends with full shell access inside the container. A compromised version with malicious `postinstall` scripts would achieve RCE. Dependabot PRs for these packages should be reviewed with extra scrutiny: check for new `scripts` entries in the updated `package.json`, unexpected binary changes, and changelog gaps. Consider pinning to exact versions (no `^` or `~` ranges) to prevent transitive dependency attacks.
+
+3. **`private: true` prevents accidental publishing** — The `private` field ensures `npm publish` will refuse to upload this package. This prevents accidental exposure of repo metadata to the npm registry.
+
 ---
 
 ## Config Variables
