@@ -48,6 +48,12 @@ _BLOCKED_DELEGATION_SUBS = {
     "run", "sync", "git", "diff", "log", "restart", "clear", "confirm",
 }
 
+# Commands intentionally allowed through delegation (safe / read-only)
+_SAFE_DELEGATION_SUBS = {"status", "info", "help"}
+
+# Strip Slack special mentions that could @-notify entire channels
+_SLACK_SPECIAL_MENTION_RE = re.compile(r"<!(channel|here|everyone)>")
+
 # Maximum number of delegation blocks processed per AI response (DoS prevention)
 _MAX_DELEGATIONS = 3
 
@@ -251,6 +257,11 @@ class SlackBot:
             )
             delegations = delegations[:_MAX_DELEGATIONS]
         for prefix, msg in delegations:
+            # Strip Slack special mentions to prevent @channel/@here/@everyone spam
+            msg = _SLACK_SPECIAL_MENTION_RE.sub("", msg).strip()
+            if not msg:
+                logger.warning("Delegation to prefix=%s empty after sanitization", prefix)
+                continue
             first_word = msg.split()[0].lower() if msg.split() else ""
             if first_word in _BLOCKED_DELEGATION_SUBS:
                 logger.warning(
@@ -370,6 +381,13 @@ class SlackBot:
         # Trusted agent messages (agent-to-agent): only process prefix commands, never AI pipeline
         if bot_id:
             if bot_id not in self._trusted_bot_ids:
+                return
+            # Enforce channel restriction even for trusted bots
+            cfg = self._settings.slack
+            if cfg.slack_channel_id and channel != cfg.slack_channel_id:
+                logger.warning(
+                    "Trusted bot %s blocked: channel %s not allowed", bot_id, channel
+                )
                 return
             p = self._p
             lower = text.lower()

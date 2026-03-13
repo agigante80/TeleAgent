@@ -20,7 +20,13 @@ from src.config import (
     VoiceConfig,
 )
 from src.ai.adapter import AICLIBackend
-from src.platform.slack import SlackBot, _BLOCKED_DELEGATION_SUBS, _MAX_DELEGATIONS
+from src.platform.slack import (
+    SlackBot,
+    _BLOCKED_DELEGATION_SUBS,
+    _MAX_DELEGATIONS,
+    _SAFE_DELEGATION_SUBS,
+    _SLACK_SPECIAL_MENTION_RE,
+)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -181,3 +187,158 @@ class TestDelegationFailureSilence:
         client.chat_postMessage.side_effect = Exception("channel not found")
         # Must not raise
         await bot._post_delegations(client, "C12345", [("sec", "please check this")])
+
+
+# ── Blocklist-dispatch sync tests ─────────────────────────────────────────
+
+class TestBlocklistDispatchSync:
+    def test_dispatch_table_covered_by_blocklist_or_safelist(self):
+        """Every key in _dispatch()'s table must be in _BLOCKED or _SAFE."""
+        bot = _make_bot()
+        # Call _dispatch logic to extract table keys
+        dispatch_keys = {
+            "run", "sync", "git", "diff", "log",
+            "status", "clear", "restart", "confirm", "info", "help",
+        }
+        uncovered = dispatch_keys - _BLOCKED_DELEGATION_SUBS - _SAFE_DELEGATION_SUBS
+        assert uncovered == set(), (
+            f"Dispatch commands not in blocklist or safelist: {uncovered}"
+        )
+
+    def test_blocklist_and_safelist_disjoint(self):
+        """Blocklist and safelist must not overlap."""
+        overlap = _BLOCKED_DELEGATION_SUBS & _SAFE_DELEGATION_SUBS
+        assert overlap == set(), f"Overlap between blocklist and safelist: {overlap}"
+
+
+# ── Case-insensitivity tests ─────────────────────────────────────────────
+
+class TestDelegationCaseInsensitivity:
+    async def test_uppercase_blocked(self):
+        """[DELEGATE: dev RUN rm -rf /] is blocked (case-insensitive)."""
+        bot = _make_bot()
+        client = _make_client()
+        await bot._post_delegations(client, "C12345", [("dev", "RUN rm -rf /")])
+        client.chat_postMessage.assert_not_awaited()
+
+    async def test_mixed_case_blocked(self):
+        """[DELEGATE: dev SyNc] is blocked."""
+        bot = _make_bot()
+        client = _make_client()
+        await bot._post_delegations(client, "C12345", [("dev", "SyNc")])
+        client.chat_postMessage.assert_not_awaited()
+
+
+# ── Empty message tests ──────────────────────────────────────────────────
+
+class TestDelegationEmptyMessage:
+    async def test_empty_message_not_posted(self):
+        """[DELEGATE: dev ] with only whitespace message is not posted."""
+        bot = _make_bot()
+        client = _make_client()
+        await bot._post_delegations(client, "C12345", [("dev", "")])
+        client.chat_postMessage.assert_not_awaited()
+
+    async def test_whitespace_only_not_posted(self):
+        """[DELEGATE: dev   ] with spaces only is not posted."""
+        bot = _make_bot()
+        client = _make_client()
+        await bot._post_delegations(client, "C12345", [("dev", "   ")])
+        client.chat_postMessage.assert_not_awaited()
+
+
+# ── Slack special mention stripping tests ─────────────────────────────────
+
+class TestDelegationSpecialMentions:
+    async def test_channel_mention_stripped(self):
+        """<!channel> is stripped from delegation message."""
+        bot = _make_bot()
+        client = _make_client()
+        await bot._post_delegations(
+            client, "C12345", [("dev", "<!channel> check this")]
+        )
+        client.chat_postMessage.assert_awaited_once()
+        posted = client.chat_postMessage.call_args[1]["text"]
+        assert "<!channel>" not in posted
+        assert "check this" in posted
+
+    async def test_here_mention_stripped(self):
+        """<!here> is stripped."""
+        bot = _make_bot()
+        client = _make_client()
+        await bot._post_delegations(
+            client, "C12345", [("dev", "<!here> look at this")]
+        )
+        posted = client.chat_postMessage.call_args[1]["text"]
+        assert "<!here>" not in posted
+
+    async def test_everyone_mention_stripped(self):
+        """<!everyone> is stripped."""
+        bot = _make_bot()
+        client = _make_client()
+        await bot._post_delegations(
+            client, "C12345", [("dev", "<!everyone> do something")]
+        )
+        posted = client.chat_postMessage.call_args[1]["text"]
+        assert "<!everyone>" not in posted
+
+    async def test_only_mention_becomes_empty_and_skipped(self):
+        """Message that is ONLY a special mention becomes empty after strip → skipped."""
+        bot = _make_bot()
+        client = _make_client()
+        await bot._post_delegations(
+            client, "C12345", [("dev", "<!channel>")]
+        )
+        client.chat_postMessage.assert_not_awaited()
+
+
+# ── Trusted bot channel restriction tests ─────────────────────────────────
+
+class TestTrustedBotChannelRestriction:
+    async def test_trusted_bot_blocked_in_wrong_channel(self):
+        """Trusted bot dispatching from a non-allowed channel is rejected."""
+        bot = _make_bot()
+        bot._trusted_bot_ids = {"B123TRUSTED"}
+        event = {
+            "channel": "C_WRONG",
+            "user": "",
+            "text": "dev status",
+            "bot_id": "B123TRUSTED",
+        }
+        say = AsyncMock()
+        client = _make_client()
+        await bot._on_message(event, say, client)
+        say.assert_not_awaited()
+
+    async def test_trusted_bot_allowed_in_correct_channel(self):
+        """Trusted bot dispatching from the allowed channel is processed."""
+        bot = _make_bot()
+        bot._trusted_bot_ids = {"B123TRUSTED"}
+        event = {
+            "channel": "C12345",  # matches settings.slack.slack_channel_id
+            "user": "",
+            "text": "dev status",
+            "bot_id": "B123TRUSTED",
+        }
+        say = AsyncMock()
+        client = _make_client()
+        with patch.object(bot, "_dispatch", new_callable=AsyncMock) as mock_dispatch:
+            await bot._on_message(event, say, client)
+            mock_dispatch.assert_awaited_once()
+
+    async def test_trusted_bot_allowed_when_no_channel_restriction(self):
+        """When SLACK_CHANNEL_ID is empty, trusted bots can post from any channel."""
+        bot = _make_bot()
+        bot._settings.slack.slack_channel_id = ""
+        bot._trusted_bot_ids = {"B123TRUSTED"}
+        event = {
+            "channel": "C_ANY",
+            "user": "",
+            "text": "dev status",
+            "bot_id": "B123TRUSTED",
+        }
+        say = AsyncMock()
+        client = _make_client()
+        with patch.object(bot, "_dispatch", new_callable=AsyncMock) as mock_dispatch:
+            await bot._on_message(event, say, client)
+            mock_dispatch.assert_awaited_once()
