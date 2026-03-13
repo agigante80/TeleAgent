@@ -5,6 +5,10 @@ on:
     paths:
       - 'docs/features/**'
 
+permissions:
+  pull-requests: write
+  issues: write
+
 jobs:
   validate-docs:
     runs-on: ubuntu-latest

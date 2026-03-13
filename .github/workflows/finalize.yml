@@ -4,6 +4,9 @@ on:
   pull_request:
     types: [closed]
 
+permissions:
+  contents: write
+
 jobs:
   finalize:
     if: github.event.pull_request.merged == true
@@ -14,21 +17,20 @@ jobs:
         with:
           persist-credentials: true
 
-      - name: Extract feature doc path from PR body
+      - name: Extract and validate feature doc path from PR body
         id: extract
         uses: actions/github-script@v7
         with:
           script: |
             const pr = context.payload.pull_request;
             const body = pr.body || '';
-            const m = body.match(/implements:\s*(docs\/features\/[^\s]+)/i);
-            if (!m) throw new Error('No implements: docs/features/<file> found in PR body');
-            return { feature: m[1] };
+            const m = body.match(/implements:\s*(docs\/features\/[a-zA-Z0-9_\-]+\.md)/i);
+            if (!m) throw new Error('No valid implements: docs/features/<file>.md found in PR body');
+            core.setOutput('feature', m[1]);
 
       - name: Run finalizer
         env:
           FEATURE_DOC: ${{ steps.extract.outputs.feature }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           python scripts/finalize_feature.py "$FEATURE_DOC"
 
