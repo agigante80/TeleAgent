@@ -62,16 +62,23 @@ async def _stream_to_telegram(
     redactor: SecretRedactor | None = None,
     show_elapsed: bool = True,
 ) -> str:
-    """Stream AI response into a Telegram message, editing it as chunks arrive."""
+    """Stream AI response into a separate reply message; thinking placeholder shows elapsed time.
+
+    The thinking placeholder is kept alive with the ticker the entire time.
+    Streaming content is streamed into a *new* reply message (created on the first chunk),
+    keeping the thinking placeholder clean. When streaming finishes:
+      1. The thinking placeholder is edited to "🤖 Thought for Xs".
+      2. The final message (already created) is updated with the clean response.
+    """
     t_start = time.monotonic()
-    msg = await update.effective_message.reply_text("🤖 Thinking…")
+    thinking_msg = await update.effective_message.reply_text("🤖 Thinking…")
     accumulated = ""
     last_edit = time.monotonic()
-    first_chunk = True
+    final_msg = None  # Created on the first throttle tick
 
     ticker = asyncio.create_task(
         thinking_ticker(
-            edit_fn=msg.edit_text,
+            edit_fn=thinking_msg.edit_text,
             slow_threshold=slow_threshold,
             update_interval=update_interval,
             timeout_secs=timeout_secs,
@@ -80,21 +87,21 @@ async def _stream_to_telegram(
     )
 
     async def _stream_body() -> None:
-        nonlocal accumulated, last_edit, first_chunk
+        nonlocal accumulated, last_edit, final_msg
         async for chunk in backend.stream(prompt):
-            if first_chunk:
-                ticker.cancel()
-                first_chunk = False
             accumulated += chunk
             now = time.monotonic()
             if now - last_edit >= throttle_secs:
                 display = accumulated[-max_chars:] if len(accumulated) > max_chars else accumulated
                 if redactor:
                     display = redactor.redact(display)
-                try:
-                    await msg.edit_text(display + " ▌")
-                except Exception:
-                    logger.debug("Telegram edit skipped (rate-limited or unchanged)")
+                if final_msg is None:
+                    final_msg = await update.effective_message.reply_text(display + " ▌")
+                else:
+                    try:
+                        await final_msg.edit_text(display + " ▌")
+                    except Exception:
+                        logger.debug("Telegram edit skipped (rate-limited or unchanged)")
                 last_edit = now
 
     try:
@@ -103,7 +110,7 @@ async def _stream_to_telegram(
         else:
             await _stream_body()
     except asyncio.TimeoutError:
-        await msg.edit_text(
+        await thinking_msg.edit_text(
             f"⚠️ Stream cancelled after {timeout_secs}s. "
             "Use /gate status to check for stuck processes."
         )
@@ -117,11 +124,19 @@ async def _stream_to_telegram(
     if redactor:
         final = redactor.redact(final)
     elapsed = int(time.monotonic() - t_start)
-    await finalize_thinking(msg.edit_text, elapsed, show_elapsed)
-    try:
-        await update.effective_message.reply_text(final or "_(empty response)_")
-    except Exception:
-        logger.debug("Telegram final edit skipped")
+    await finalize_thinking(thinking_msg.edit_text, elapsed, show_elapsed)
+    if final_msg is None:
+        # No chunks received — post the full response as a new message
+        try:
+            await update.effective_message.reply_text(final or "_(empty response)_")
+        except Exception:
+            logger.warning("Failed to send final Telegram response")
+    else:
+        # Streaming message already exists — update it with clean content (remove cursor)
+        try:
+            await final_msg.edit_text(final or "_(empty response)_")
+        except Exception:
+            logger.debug("Telegram final message update skipped")
     return final
 
 

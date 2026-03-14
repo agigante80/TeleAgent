@@ -172,6 +172,15 @@ class SlackBot:
     async def _stream_to_slack(
         self, say, client, channel: str, prompt: str, *, thread_ts: str | None = None
     ) -> str:
+        """Stream AI response into a separate thread message; thinking placeholder shows elapsed time.
+
+        The thinking placeholder is kept alive with the ticker the entire time.
+        Streaming content is streamed into a *new* thread message (created on the first chunk),
+        keeping the thinking placeholder clean. When streaming finishes:
+          1. The thinking placeholder is edited to "🤖 Thought for Xs" (or deleted if
+             SLACK_DELETE_THINKING=true).
+          2. The final message (already created) is updated with the clean response.
+        """
         t_start = time.monotonic()
         resp = await self._reply(client, channel, _THINKING, thread_ts)
         ts = resp["ts"]
@@ -180,7 +189,7 @@ class SlackBot:
         throttle = self._settings.bot.stream_throttle_secs
         max_chars = self._settings.bot.max_output_chars
         cfg = self._settings.bot
-        first_chunk = True
+        final_ts = None  # TS of the response message (created on the first throttle tick)
 
         ticker = asyncio.create_task(
             thinking_ticker(
@@ -193,11 +202,8 @@ class SlackBot:
         )
 
         async def _stream_body() -> None:
-            nonlocal accumulated, last_edit, first_chunk
+            nonlocal accumulated, last_edit, final_ts
             async for chunk in self._backend.stream(prompt):
-                if first_chunk:
-                    ticker.cancel()
-                    first_chunk = False
                 accumulated += chunk
                 now = time.monotonic()
                 if now - last_edit >= throttle:
@@ -206,7 +212,11 @@ class SlackBot:
                         if len(accumulated) > max_chars
                         else accumulated
                     )
-                    await self._edit(client, channel, ts, display + " ▌")
+                    if final_ts is None:
+                        r = await self._reply(client, channel, display + " ▌", thread_ts)
+                        final_ts = r["ts"]
+                    else:
+                        await self._edit(client, channel, final_ts, display + " ▌")
                     last_edit = now
 
         try:
@@ -249,7 +259,12 @@ class SlackBot:
                 elapsed,
                 self._settings.bot.thinking_show_elapsed,
             )
-        await self._reply(client, channel, final or "_(empty response)_", thread_ts)
+        if final_ts is None:
+            # No chunks received — post the full response as a new message
+            await self._reply(client, channel, final or "_(empty response)_", thread_ts)
+        else:
+            # Streaming message already exists — update it with clean content (remove cursor)
+            await self._edit(client, channel, final_ts, final or "_(empty response)_")
         await self._post_delegations(client, channel, delegations, thread_ts=thread_ts)
         return final
 
