@@ -16,7 +16,7 @@ Currently the broadcast router misclassifies bare subcommands as AI prompts.
 | Reviewer | Round | Score | Date | Notes |
 |----------|-------|-------|------|-------|
 | GateCode | 1 | -/10 | - | Pending |
-| GateSec  | 1 | -/10 | - | Pending |
+| GateSec  | 1 | 8/10 | 2026-03-14 | Auth claim corrected (OQ3→Architecture Notes fix); added OQ6 multi-bot `run` amplification risk; added OQ7 `@here confirm off` mass-disarm; OQ3 `confirm` edge case verified safe |
 | GateDocs | 1 | 8/10 | 2026-03-14 | Architecture Notes auth claim is wrong (auth IS enforced at line 473, before broadcast block); test file should extend existing TestBroadcast class, not create new file; README placement needs section name |
 
 **Status**: ⏳ Pending review
@@ -167,8 +167,9 @@ user posts "@here sync"
   this fix preserves that behaviour.
 - **Thread context** — `thread_ts` is passed through unchanged.
 - **Trusted-agent routing** — unaffected; trusted agents never reach the broadcast block.
-- **`_is_allowed`** — broadcast routing does not call `_is_allowed` (same as today); the
-  existing auth model treats `@here` as an implicit allow. No change to auth surface.
+- **`_is_allowed`** — `_is_allowed()` is called at line 473, *before* the broadcast block
+  (line 491). Unauthorized users are rejected before broadcast routing runs. The new bare-
+  subcommand path inherits this existing auth gate — no change to auth surface.
 
 ---
 
@@ -291,6 +292,19 @@ This is a bug fix with no new env vars or API surface changes.
 
 5. **`@channel` and `@everyone`** — `_SLACK_SPECIAL_MENTION_RE` matches all three variants;
    the fix applies identically to all.
+
+6. **[SEC] Multi-bot shell execution amplification** — `@here run <cmd>` dispatches to
+   `_cmd_run` on *every* bot instance simultaneously. Non-destructive commands execute on all
+   bots without any aggregate confirmation. For destructive commands, each bot prompts
+   independently — the user must confirm N times. Consider: (a) documenting this as expected
+   behaviour, or (b) adding a broadcast-specific warning like "⚠️ This command will run on
+   all N active bots." before execution.
+
+7. **[SEC] `@here confirm off` mass-disarm** — broadcasting `confirm off` disables
+   destructive-command confirmation on *all* bot instances in a single message. This silently
+   removes the safety net across the entire workspace. Consider: (a) requiring `confirm off`
+   to be addressed to a specific bot (no broadcast), or (b) emitting a prominent warning when
+   confirmation is disabled via broadcast.
 
 ---
 
