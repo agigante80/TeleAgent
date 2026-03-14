@@ -17,7 +17,7 @@ caught before merge.
 |----------|-------|-------|------|-------|
 | GateCode | 1 | -/10 | - | Pending |
 | GateSec  | 1 | -/10 | - | Pending |
-| GateDocs | 1 | -/10 | - | Pending |
+| GateDocs | 1 | 9/10 | 2026-03-14 | Comprehensive, accurate CI refs (lines verified). One inconsistency: Step 4 pip-audit snippet uses `\|\| true` (never fails), contradicting the Axis 4 recommendation of "fail on any". Fix before implementation. Roadmap entry added. |
 
 **Status**: ⏳ Pending review
 **Approved**: No — requires all scores ≥ 9/10 in the same round
