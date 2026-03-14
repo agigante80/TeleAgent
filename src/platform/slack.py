@@ -213,8 +213,11 @@ class SlackBot:
                         else accumulated
                     )
                     if final_ts is None:
-                        r = await self._reply(client, channel, display + " ▌", thread_ts)
-                        final_ts = r["ts"]
+                        try:
+                            r = await self._reply(client, channel, display + " ▌", thread_ts)
+                            final_ts = r["ts"]
+                        except Exception:
+                            logger.warning("Slack: failed to create streaming reply; will retry at end")
                     else:
                         await self._edit(client, channel, final_ts, display + " ▌")
                     last_edit = now

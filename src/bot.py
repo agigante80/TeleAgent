@@ -96,7 +96,10 @@ async def _stream_to_telegram(
                 if redactor:
                     display = redactor.redact(display)
                 if final_msg is None:
-                    final_msg = await update.effective_message.reply_text(display + " ▌")
+                    try:
+                        final_msg = await update.effective_message.reply_text(display + " ▌")
+                    except Exception:
+                        logger.warning("Telegram: failed to create streaming reply; will retry at end")
                 else:
                     try:
                         await final_msg.edit_text(display + " ▌")
