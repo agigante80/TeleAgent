@@ -15,9 +15,9 @@ Formalise the Docker image tagging convention so users can pull predictable, wel
 |----------|-------|-------|------|-------|
 | GateCode | 1 | -/10 | - | Pending |
 | GateSec  | 1 | 10/10 | 2026-03-14 | Authored |
-| GateDocs | 1 | -/10 | - | Pending |
+| GateDocs | 1 | 9/10 | 2026-03-14 | Accurate, well-structured. Added Config Variables table. |
 
-**Status**: ⏳ Pending review
+**Status**: ⏳ Pending GateCode review
 **Approved**: No — requires all scores ≥ 9/10 in the same round
 
 ---
@@ -235,6 +235,19 @@ Sets `IMAGE_TAG` so the bot's ready message shows the non-production version for
 | `docker-compose.yml.example` | Template showing `build: .` (local) — users replace with `image:` for registry pulls |
 | `src/config.py` | `IMAGE_TAG` env var consumed by the bot at runtime (ready message) |
 | `src/ready_msg.py` | Formats the version string displayed in the 🟢 Ready message |
+
+---
+
+## Config Variables
+
+No new CI/CD env vars. The following `BotConfig` fields in `src/config.py` (lines 52–53) surface build provenance at runtime:
+
+| Env var | Type | Default | Description |
+|---------|------|---------|-------------|
+| `IMAGE_TAG` | `str` | `""` | Docker tag in use (e.g., `latest`, `develop`, `local-dev`). Set by docker-compose. Controls channel suffix in the 🟢 Ready message. |
+| `GIT_SHA` | `str` | `""` | Short commit SHA (7 chars). Used by `src/ready_msg.py:_resolve_sha()` when `IMAGE_TAG` is non-production. Auto-resolved via `git rev-parse --short HEAD` if unset. |
+
+> See `docs/features/ready-msg-git-sha.md` for the full rendering logic.
 
 ---
 
