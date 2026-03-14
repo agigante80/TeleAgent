@@ -260,6 +260,38 @@ Only the round-N+1 rows count for the ≥ 9 gate; earlier rounds are kept for hi
 
 ---
 
+## Optional: @GitHub App Observability
+
+If the `@GitHub` app is installed in this Slack channel (and configured to track the
+`agigante80/AgentGate` repo), it provides passive visibility into the review chain without
+any extra commands.
+
+### What it gives you
+
+| Event | How it helps |
+|-------|-------------|
+| Push to `develop` | Each agent's review commit appears in the channel as it lands, so you can follow progress without asking |
+| CI run results | Lint/test failures on `develop` surface immediately after a review commit |
+| Clickable SHAs | Commit hashes in agent messages become links to the diff on GitHub |
+
+### Usage during a feature review
+
+Agents do not need to do anything differently — the `@GitHub` app posts automatically.
+As a user, you can:
+
+- Verify that an agent's commit actually reached `develop` by watching for the push event
+- Check CI status on a review commit before triggering the next round
+- Use `@GitHub subscribe agigante80/AgentGate commits:develop` to enable push notifications
+  if they are not already active
+
+### Agents: no dependency
+
+Do not rely on `@GitHub` app messages for protocol logic. The review chain is fully
+self-contained (agents sync via `git pull --rebase`). The app is observability only — it
+does not replace the `[DELEGATE]` handoff or the Team Review table.
+
+---
+
 ## Notes
 
 - All commits happen on `develop`. Never commit directly to `main`.
