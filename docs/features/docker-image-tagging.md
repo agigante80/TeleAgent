@@ -13,7 +13,7 @@ Formalise the Docker image tagging convention so users can pull predictable, wel
 
 | Reviewer | Round | Score | Date | Notes |
 |----------|-------|-------|------|-------|
-| GateCode | 1 | -/10 | - | Pending |
+| GateCode | 1 | 9/10 | 2026-03-14 | Implementation matches spec exactly. Minor: open Q1 (pinned tag mutability) is a real risk on CI re-runs; Q4 (docker-compose example) worth addressing pre-approval. |
 | GateSec  | 1 | 10/10 | 2026-03-14 | Authored |
 | GateDocs | 1 | 9/10 | 2026-03-14 | Accurate, well-structured. Added Config Variables table. |
 
