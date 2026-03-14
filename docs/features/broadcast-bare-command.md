@@ -15,11 +15,11 @@ Currently the broadcast router misclassifies bare subcommands as AI prompts.
 
 | Reviewer | Round | Score | Date | Notes |
 |----------|-------|-------|------|-------|
-| GateCode | 1 | -/10 | - | Pending |
+| GateCode | 1 | 8/10 | 2026-03-14 | Code snippet verified accurate against live `slack.py:507–510`; `_KNOWN_SUBS` ref correct; auth claim confirmed fixed by GateSec; two blocking gaps: (1) "Files to Change" still says *create* `test_slack_broadcast.py` — must be *extend* `TestBroadcast` in `test_slack_bot.py`; (2) OQ6/OQ7 have no resolution decision or AC — spec should either document-as-expected-behaviour or add a warning step |
 | GateSec  | 1 | 8/10 | 2026-03-14 | Auth claim corrected (OQ3→Architecture Notes fix); added OQ6 multi-bot `run` amplification risk; added OQ7 `@here confirm off` mass-disarm; OQ3 `confirm` edge case verified safe |
 | GateDocs | 1 | 8/10 | 2026-03-14 | Architecture Notes auth claim is wrong (auth IS enforced at line 473, before broadcast block); test file should extend existing TestBroadcast class, not create new file; README placement needs section name |
 
-**Status**: ⏳ Pending review
+**Status**: ⏳ Round 1 complete — Round 2 required (all scores 8/10; need ≥ 9/10)
 **Approved**: No — requires all scores ≥ 9/10 in the same round
 
 ---
