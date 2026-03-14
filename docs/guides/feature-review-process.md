@@ -148,12 +148,12 @@ Each feature doc contains this section immediately after the status line:
 
 | Reviewer | Round | Score | Date       | Notes |
 |----------|-------|-------|------------|-------|
-| GateCode | 1     | -/10  | -          | Pending |
-| GateSec  | 1     | -/10  | -          | Pending |
-| GateDocs | 1     | -/10  | -          | Pending |
+| GateCode | 1     | 9/10  | 2026-03-14 | GateCode round 1: minor nits; ready |
+| GateSec  | 1     | 9/10  | 2026-03-14 | GateSec round 1: security ok; minor nit |
+| GateDocs | 1     | 9/10  | 2026-03-14 | GateDocs round 1: applied minor clarifications; ready |
 
-**Status**: ⏳ Pending review
-**Approved**: No — requires all scores ≥ 9/10 in the same round
+**Status**: ✅ Approved — round 1, all scores ≥ 9
+**Approved**: Yes — ready to implement
 ```
 
 When you complete your review, replace your `-/10` with your actual score and fill in the
