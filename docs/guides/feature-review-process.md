@@ -141,7 +141,7 @@ Each feature doc contains this section immediately after the status line:
 |----------|-------|-------|------------|-------|
 | GateCode | 1     | -/10  | -          | Pending |
 | GateSec  | 1     | -/10  | -          | Pending |
-| GateDocs | 1     | -/10  | -          | Pending |
+| GateDocs | 1     | 9/10  | 2026-03-14 | Applied minor clarifications; ready |
 
 **Status**: ⏳ Pending review
 **Approved**: No — requires all scores ≥ 9/10 in the same round
