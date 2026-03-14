@@ -6,6 +6,22 @@ One-sentence summary of what this feature does and why it exists.
 
 ---
 
+## Team Review
+
+> Managed automatically by the team review process — see `docs/guides/feature-review-process.md`.
+> To start a review, ask any team member: `dev Please start a feature review of docs/features/<this-file>.md`
+
+| Reviewer | Round | Score | Date | Notes |
+|----------|-------|-------|------|-------|
+| GateCode | 1 | -/10 | - | Pending |
+| GateSec  | 1 | -/10 | - | Pending |
+| GateDocs | 1 | -/10 | - | Pending |
+
+**Status**: ⏳ Pending review
+**Approved**: No — requires all scores ≥ 9/10 in the same round
+
+---
+
 ## ⚠️ Prerequisite Questions
 
 > Answer these before writing a single line of code. A wrong assumption at the start
