@@ -16,10 +16,10 @@ caught before merge.
 | Reviewer | Round | Score | Date | Notes |
 |----------|-------|-------|------|-------|
 | GateCode | 1 | 9/10 | 2026-03-14 | Problem analysis airtight; YAML snippets verified against live workflow. Two additions: CodeQL scheduled-scan trigger + pip-audit SARIF syntax pre-validation. See OQ9 and OQ10. |
-| GateSec  | 1 | -/10 | - | Pending |
+| GateSec  | 1 | 7/10 | 2026-03-14 | Security analysis is excellent; design choices are sound. Three blocking issues: (1) Step 4 `\|\| true` makes pip-audit enforcement impossible — confirmed, directly contradicts Axis 4 "fail on any"; (2) Step 4 `--format sarif --output` is wrong pip-audit syntax (should be `-f sarif -o`) — silent CI failure risk; (3) Step 2 Trivy YAML still uses `@master` — contradicts AC "pinned to release tag". One advisory: Step 2 `exit-code: '0'` phased plan has no follow-up Implementation Step to actually enable `exit-code: '1'`, so enforcement may never land. See OQ11. |
 | GateDocs | 1 | 8/10 | 2026-03-14 | Implementation steps are clear. Four gaps: (1) Step 4 `\|\| true` still contradicts Axis 4 "fail on any (pip-audit)" — blocking for implementers; (2) README placement says "CI/CD section" but no such section exists — should target `## Security`; (3) AC "< 100 alerts" is a fragile snapshot metric, not a structural guarantee; (4) repo has `package.json` — `npm audit` worth a Future Work mention. |
 
-**Status**: ⏳ In review (2/3 complete)
+**Status**: ⏳ In review (3/3 complete — scores below threshold)
 **Approved**: No — requires all scores ≥ 9/10 in the same round
 
 ---
@@ -692,6 +692,14 @@ unchanged.
     before merging — a broken CI command would silently skip the upload.
     *Proposed answer*: use `pip install pip-audit && pip-audit -r requirements.txt -f
     sarif -o pip-audit-results.sarif` and test against the latest pip-audit release.
+
+11. **Missing Phase 2 step for Trivy enforcement** — Step 2 sets `exit-code: '0'` with a
+    comment "Phase 1: report only. Change to '1' after initial cleanup." There is no
+    Implementation Step or AC tracking this transition. Without it, enforcement may
+    never be enabled — the feature ships in permanent report-only mode for Trivy, which
+    contradicts Axis 4 Option B.
+    *Proposed answer*: add an explicit Step 7 ("After initial CI run: verify alert count,
+    then set Trivy `exit-code: '1'` and merge the change") or add an AC item for it.
 
 ---
 
