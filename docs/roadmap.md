@@ -29,6 +29,7 @@ If adding a new item, create a feature document using `docs/features/_template.m
 | 2.11 | Voice transcription — local Whisper provider | [→ features/whisper-local.md](features/whisper-local.md) |
 | 2.12 | Voice transcription — Google Speech-to-Text provider | [→ features/whisper-google.md](features/whisper-google.md) |
 | 2.13 | Lightweight web dashboard — read-only HTTP status page in the container | [→ features/web-dashboard.md](features/web-dashboard.md) |
+| 2.14 | Thinking elapsed time — final response as new message; placeholder updated with total time | [→ features/thinking-elapsed-final.md](features/thinking-elapsed-final.md) |
 
 ---
 
