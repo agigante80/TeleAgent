@@ -90,7 +90,7 @@ class SQLiteStorage(ConversationStorage):
         if limit == 0:
             return []
         try:
-            capped = min(limit, 100)
+            capped = min(max(limit, 1), 100)
             async with aiosqlite.connect(self._db_path) as db:
                 async with db.execute(
                     "SELECT user_msg, ai_msg FROM history WHERE chat_id=? ORDER BY id DESC LIMIT ?",

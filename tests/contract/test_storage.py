@@ -95,6 +95,14 @@ async def test_sqlite_get_zero_limit(ready_storage):
     assert rows == []
 
 
+async def test_sqlite_get_negative_limit_clamped(ready_storage):
+    """Negative limit must not bypass the cap (SQLite LIMIT -1 = no limit)."""
+    for i in range(150):
+        await ready_storage.add_exchange("chat1", f"q{i}", f"a{i}")
+    rows = await ready_storage.get_history("chat1", limit=-1)
+    assert len(rows) <= 100
+
+
 async def test_sqlite_get_history_oldest_first(ready_storage):
     """get_history must return exchanges oldest-first."""
     await ready_storage.add_exchange("chat1", "first", "r1")
