@@ -1,6 +1,6 @@
 # Split AIConfig into Per-Backend Sub-Configs
 
-> Status: **Implemented** (v0.18.0, commit TBD) | Priority: Low (long-term architecture)
+> Status: ✅ **Implemented** (v0.18.0, commit 82d004e) | Priority: Low (long-term architecture)
 
 ## Problem
 
@@ -52,3 +52,23 @@ All env var names are unchanged from the original flat design. Only internal att
 - `tests/integration/test_factory.py` — `COPILOT_MODEL` override test added
 - `README.md` — `COPILOT_MODEL` row added to env var tables
 
+
+## Acceptance Criteria
+
+- [x] `COPILOT_MODEL` env var sets `CopilotAIConfig.copilot_model`
+- [x] Factory resolves copilot model as `COPILOT_MODEL or AI_MODEL` (same pattern as `CODEX_MODEL`)
+- [x] Existing env var names unchanged — no breaking change for current deployments
+- [x] `test_config_split.py` covers all sub-config fields and fallbacks
+- [x] `test_factory.py` covers `COPILOT_MODEL` override behaviour
+- [x] `README.md` env var tables include `COPILOT_MODEL`
+- [x] 519/519 tests passing, ruff clean
+
+## Team Review
+
+| Reviewer | Score | Notes |
+|----------|-------|-------|
+| GateCode | 10/10 | Implemented — clean pattern match with codex |
+| GateSec  | —     | — |
+| GateDocs | 10/10 | Spec accurate, README consistent, no stale refs |
+
+Status: ✅ Implemented
