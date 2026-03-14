@@ -188,6 +188,8 @@ Copy `.env.example` — it documents every variable with examples.
 | `THINKING_UPDATE_SECS` | `30` | Seconds between subsequent elapsed-time updates |
 | `AI_TIMEOUT_WARN_SECS` | `60` | Seconds before hard timeout to include a cancellation warning |
 | `THINKING_SHOW_ELAPSED` | `true` | When `true`, update the "🤖 Thinking…" placeholder to "🤖 Thought for Xs" after AI responds; final response posted as a new message |
+| `IMAGE_TAG` | — | Docker image tag; shown in the ready message. Set by docker-compose. |
+| `GIT_SHA` | — | Short commit hash (7 chars). When set alongside a non-`latest` `IMAGE_TAG`, shown as `v{ver}-dev-{sha}` in the ready message. Auto-resolved from git if unset. |
 
 ### Logging
 
@@ -487,6 +489,8 @@ Copy `.env.example` — it documents every variable with examples.
 | `THINKING_UPDATE_SECS` | `30` | Seconds between subsequent elapsed-time updates |
 | `AI_TIMEOUT_WARN_SECS` | `60` | Seconds before hard timeout to include a cancellation warning |
 | `THINKING_SHOW_ELAPSED` | `true` | When `true`, update the "🤖 Thinking…" placeholder to "🤖 Thought for Xs" after AI responds; final response posted as a new message |
+| `IMAGE_TAG` | — | Docker image tag; shown in the ready message. Set by docker-compose. |
+| `GIT_SHA` | — | Short commit hash (7 chars). When set alongside a non-`latest` `IMAGE_TAG`, shown as `v{ver}-dev-{sha}` in the ready message. Auto-resolved from git if unset. |
 
 ### Logging
 

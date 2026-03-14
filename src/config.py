@@ -50,6 +50,7 @@ class BotConfig(BaseSettings):
     confirm_destructive: bool = True  # Set CONFIRM_DESTRUCTIVE=false to skip confirmation prompts
     skip_confirm_keywords: list[str] = []  # e.g. SKIP_CONFIRM_KEYWORDS=push,rm — always bypassed
     image_tag: str = ""  # IMAGE_TAG — set by docker-compose to show "latest" or "development" in ready msg
+    git_sha: str = ""   # GIT_SHA — short commit hash; shown in version string for non-production builds
     prefix_only: bool = False  # PREFIX_ONLY=true: ignore messages that don't start with the bot prefix (for multi-agent Slack)
     system_prompt: str = ""  # SYSTEM_PROMPT: optional text prepended to every AI prompt (team context is auto-generated separately)
     ai_timeout_secs: int = 0                # Hard timeout for any AI backend (0 = no timeout); env: AI_TIMEOUT_SECS

@@ -1,5 +1,27 @@
 """Shared helpers for building the AgentGate ready / info messages."""
-from src.config import Settings
+import subprocess
+
+from src.config import Settings, REPO_DIR
+
+
+def _resolve_sha(settings: Settings) -> str:
+    """Return the short git SHA for the current HEAD commit.
+
+    Uses ``settings.bot.git_sha`` if set; otherwise queries git directly.
+    Returns ``""`` silently on any error.
+    """
+    if settings.bot.git_sha:
+        return settings.bot.git_sha
+    try:
+        result = subprocess.run(
+            ["git", "-C", REPO_DIR, "rev-parse", "--short", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+        return result.stdout.strip() if result.returncode == 0 else ""
+    except Exception:
+        return ""
 
 
 def ai_label(settings: Settings) -> str:
@@ -19,7 +41,12 @@ def build_ready_message(settings: Settings, version: str, prefix: str, use_slash
     """Build the 🟢 Ready message shown on startup and by /gate info."""
     ai = ai_label(settings)
     tag = settings.bot.image_tag
-    version_line = f"v{version}" + (f" `:{tag}`" if tag else "")
+    is_dev = bool(tag and tag != "latest")
+    if is_dev:
+        sha = _resolve_sha(settings)
+        version_line = f"v{version}-dev-{sha}" if sha else f"v{version} `:{tag}`"
+    else:
+        version_line = f"v{version}" + (f" `:{tag}`" if tag else "")
     cmd = f"/{prefix}" if use_slash else prefix
     return (
         f"🟢 *AgentGate Ready* — {version_line}\n"
