@@ -17,7 +17,7 @@ Currently the broadcast router misclassifies bare subcommands as AI prompts.
 |----------|-------|-------|------|-------|
 | GateCode | 1 | -/10 | - | Pending |
 | GateSec  | 1 | -/10 | - | Pending |
-| GateDocs | 1 | -/10 | - | Pending |
+| GateDocs | 1 | 8/10 | 2026-03-14 | Architecture Notes auth claim is wrong (auth IS enforced at line 473, before broadcast block); test file should extend existing TestBroadcast class, not create new file; README placement needs section name |
 
 **Status**: ⏳ Pending review
 **Approved**: No — requires all scores ≥ 9/10 in the same round
