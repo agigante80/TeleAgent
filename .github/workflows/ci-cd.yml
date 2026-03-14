@@ -163,6 +163,33 @@ jobs:
           echo "- **Version**: \`${{ needs.version.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
 
   # --------------------------------------------------------------------------
+  # Job 2b: Docs Lint
+  # --------------------------------------------------------------------------
+  docs-lint:
+    name: Lint Docs
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: version
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: 📚 Run docs lint
+        run: python scripts/lint_docs.py
+
+      - name: 📋 Docs lint summary
+        if: always()
+        run: |
+          echo "### 📚 Docs Lint Results" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status**: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version**: \`${{ needs.version.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+
+  # --------------------------------------------------------------------------
   # Job 3: Tests
   # --------------------------------------------------------------------------
   test:
@@ -210,7 +237,7 @@ jobs:
     name: Build & Publish Docker Image
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: [version, lint, test]
+    needs: [version, lint, docs-lint, test]
     if: |
       always() &&
       needs.version.result == 'success' &&
@@ -292,7 +319,7 @@ jobs:
     name: Security Scan
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: [version, lint, test]
+    needs: [version, lint, docs-lint, test]
     if: |
       always() &&
       needs.version.result == 'success' &&
@@ -492,7 +519,7 @@ jobs:
     name: Pipeline Summary
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: [version, lint, test, docker-publish, security-scan, pre-release, release]
+    needs: [version, lint, docs-lint, test, docker-publish, security-scan, pre-release, release]
     if: always()
     steps:
       - name: 📊 Generate pipeline summary

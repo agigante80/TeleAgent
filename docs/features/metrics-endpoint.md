@@ -1,5 +1,7 @@
-Feature: Prometheus Metrics Endpoint
-Status: Proposed
+# Prometheus Metrics Endpoint (`/metrics`)
+
+> Status: **Proposed** | Priority: Medium | Last reviewed: 2026-03-14
+
 Owners: @GateCode (implementation), @GateSec (security review)
 
 Summary

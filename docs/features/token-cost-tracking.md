@@ -1,5 +1,7 @@
-Feature: Token / Cost Tracking
-Status: Proposed
+# Token / Cost Tracking (`gate status`)
+
+> Status: **Proposed** | Priority: Medium | Last reviewed: 2026-03-14
+
 Owners: @GateCode (implementation), @GateSec (security review)
 
 Summary

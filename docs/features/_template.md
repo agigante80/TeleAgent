@@ -360,12 +360,31 @@ a `# pragma: no cover` comment with a one-line explanation.
 Add entries in the relevant sections:
 
 1. **Features bullet list** — one-line description with emoji.
-2. **Environment variables table** — one row per new env var.
+2. **Environment variables table** — one row per new env var (both Telegram and Slack sections if applicable).
 3. **Bot commands table** — one row per new `gate <cmd>`.
 
 Example env var row:
 ```markdown
 | `NEW_VAR_ONE` | `true` | Enable [feature name]. Set `false` to disable. |
+```
+
+### `.env.example` and `docker-compose.yml.example`
+
+For every new env var introduced by this feature:
+
+- [ ] Add a commented entry to `.env.example` with a sensible example value and a one-line description.
+- [ ] Add a matching commented entry to `docker-compose.yml.example` under the appropriate platform block.
+- [ ] Verify existing vars that this feature changes (renamed, removed, or new defaults) are updated in both files.
+
+Example `.env.example` entry:
+```bash
+# Enable [feature name]. Set to false to disable. (default: true)
+# NEW_VAR_ONE=true
+```
+
+Example `docker-compose.yml.example` entry:
+```yaml
+# NEW_VAR_ONE=true   # Enable [feature name]
 ```
 
 ### `.github/copilot-instructions.md`
@@ -450,7 +469,9 @@ If a stretch goal or follow-up iteration was identified during implementation, a
 - [ ] All implementation steps above are complete.
 - [ ] `pytest tests/ -v --tb=short` passes with no failures or errors.
 - [ ] `ruff check src/` reports no new linting issues.
-- [ ] `README.md` is updated (features bullet, env var table, commands table).
+- [ ] `README.md` is updated (features bullet, env var table, commands table — both Telegram and Slack sections).
+- [ ] `.env.example` updated with commented entries for all new env vars.
+- [ ] `docker-compose.yml.example` updated with commented entries for all new env vars.
 - [ ] `docs/roadmap.md` entry is marked done (✅).
 - [ ] `docs/features/[this-file].md` status changed to `Implemented`.
 - [ ] `.github/copilot-instructions.md` updated if a new module/pattern was added.
