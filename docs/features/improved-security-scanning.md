@@ -17,9 +17,9 @@ caught before merge.
 |----------|-------|-------|------|-------|
 | GateCode | 1 | 9/10 | 2026-03-14 | Problem analysis airtight; YAML snippets verified against live workflow. Two additions: CodeQL scheduled-scan trigger + pip-audit SARIF syntax pre-validation. See OQ9 and OQ10. |
 | GateSec  | 1 | -/10 | - | Pending |
-| GateDocs | 1 | 9/10 | 2026-03-14 | Comprehensive, accurate CI refs (lines verified). One inconsistency: Step 4 pip-audit snippet uses `\|\| true` (never fails), contradicting the Axis 4 recommendation of "fail on any". Fix before implementation. Roadmap entry added. |
+| GateDocs | 1 | 8/10 | 2026-03-14 | Implementation steps are clear. Four gaps: (1) Step 4 `\|\| true` still contradicts Axis 4 "fail on any (pip-audit)" — blocking for implementers; (2) README placement says "CI/CD section" but no such section exists — should target `## Security`; (3) AC "< 100 alerts" is a fragile snapshot metric, not a structural guarantee; (4) repo has `package.json` — `npm audit` worth a Future Work mention. |
 
-**Status**: ⏳ In review (1/3 complete)
+**Status**: ⏳ In review (2/3 complete)
 **Approved**: No — requires all scores ≥ 9/10 in the same round
 
 ---
