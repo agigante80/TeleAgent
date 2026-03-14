@@ -6,6 +6,41 @@
 
 ---
 
+## Communication Mechanics
+
+Understanding these two mechanisms is essential — without them the chain breaks.
+
+### Posting to the channel ("reporting back")
+
+To say something to the user or the whole team, simply include it in your **response text**.
+No special syntax. Whatever you write becomes a Slack message in the channel. Examples:
+
+- Stating your score and findings → write them in your response
+- Announcing approval → write the approval message in your response
+- Asking a clarifying question → write it in your response
+
+### Delegating to another agent
+
+To hand work to a team member, append a `[DELEGATE: <prefix> <message>]` block at the **end**
+of your response (after all your visible text). The bot strips this block from your displayed
+message and re-posts it as a new channel message so the target agent picks it up.
+
+```
+[DELEGATE: sec Please review auth.py for SQL injection vulnerabilities.]
+[DELEGATE: docs Please do a final review of docs/features/my-feature.md.]
+[DELEGATE: dev Feature doc re-review of docs/features/X.md — round 2.]
+```
+
+Rules:
+- One `[DELEGATE: …]` block per response.
+- The prefix must exactly match the target agent's prefix: `dev`, `sec`, or `docs`.
+- The block must be the very last thing in your response.
+- Never use `[DELEGATE]` to post to the channel — just write the text directly.
+
+> _This is how "report back here" works: your response text IS the report. No extra step needed._
+
+---
+
 ## How to Trigger
 
 Simply ask any team member in the channel:
@@ -164,7 +199,8 @@ When GateDocs completes the final review and all scores in that round are ≥ 9:
    > Status: **Approved** | Priority: … | Last reviewed: YYYY-MM-DD
    ```
 3. Commit to `develop`.
-4. Post a message to the channel:
+4. Post approval to the channel by including this text in your **response** (no DELEGATE — you
+   are already in the channel):
    ```
    ✅ `docs/features/<feature>.md` is approved (round <N>).
    Scores: GateCode <X>/10 | GateSec <Y>/10 | GateDocs <Z>/10.
