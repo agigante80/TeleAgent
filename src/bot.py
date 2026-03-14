@@ -116,11 +116,8 @@ async def _stream_to_telegram(
     final = accumulated[-max_chars:] if len(accumulated) > max_chars else accumulated
     if redactor:
         final = redactor.redact(final)
-    try:
-        elapsed = int(time.monotonic() - t_start)
-        await finalize_thinking(msg.edit_text, elapsed, show_elapsed)
-    except Exception:
-        logger.debug("Telegram thinking-elapsed edit skipped")
+    elapsed = int(time.monotonic() - t_start)
+    await finalize_thinking(msg.edit_text, elapsed, show_elapsed)
     try:
         await update.effective_message.reply_text(final or "_(empty response)_")
     except Exception:

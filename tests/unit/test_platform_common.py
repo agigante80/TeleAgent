@@ -160,3 +160,12 @@ class TestFinalizeThinking:
 
         await finalize_thinking(edit_fn, elapsed_secs=5, show_elapsed=False)
         assert calls == []
+
+    async def test_edit_fn_exception_is_swallowed(self):
+        """If edit_fn raises, finalize_thinking logs and does not propagate."""
+
+        async def edit_fn(text):
+            raise RuntimeError("API error")
+
+        # Must not raise
+        await finalize_thinking(edit_fn, elapsed_secs=10, show_elapsed=True)

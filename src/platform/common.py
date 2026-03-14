@@ -1,5 +1,6 @@
 """Platform-agnostic helpers shared between Telegram and Slack bots."""
 import asyncio
+import logging
 import time
 from collections.abc import Awaitable, Callable
 
@@ -7,6 +8,8 @@ from src import history
 from src.history import ConversationStorage
 from src.ai.adapter import AICLIBackend
 from src.config import Settings
+
+logger = logging.getLogger(__name__)
 
 
 def _format_elapsed(secs: int) -> str:
@@ -65,7 +68,10 @@ async def finalize_thinking(
     """
     if show_elapsed:
         label = _format_elapsed(elapsed_secs)
-        await edit_fn(f"🤖 Thought for {label}")
+        try:
+            await edit_fn(f"🤖 Thought for {label}")
+        except Exception:
+            logger.debug("Could not update thinking placeholder with elapsed time")
 
 
 async def build_prompt(
