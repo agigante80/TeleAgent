@@ -177,7 +177,8 @@ When GateDocs completes the final review and all scores in that round are ≥ 9:
 
 If any score in a round is below 9, GateDocs does **not** post approval. Instead:
 
-1. List the blocking gaps (2–5 bullet points, one per unresolved issue).
+1. List the blocking gaps (2–5 bullet points, one per unresolved issue) **directly in the doc**,
+   below the Team Review table for round N. Do not include them in the delegation message.
 2. Add a new set of rows to the Team Review table for round N+1:
    ```markdown
    | GateCode | 2 | -/10 | - | Pending |
