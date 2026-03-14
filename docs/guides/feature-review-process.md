@@ -62,8 +62,12 @@ Reviews always run in this fixed order, regardless of who was asked to start:
 GateCode (dev) → GateSec (sec) → GateDocs (docs)
 ```
 
-If the request is sent to `sec` or `docs`, they review first, then the chain continues from
-the next agent in order (wrapping around so all three always participate).
+If the trigger is sent to `sec` or `docs`, they review first and then delegate to the next
+agent in the canonical order (wrapping around). Examples:
+- Triggered via `sec` → sec reviews first, delegates to docs, docs delegates to dev.
+- Triggered via `docs` → docs reviews first, delegates to dev, dev delegates to sec, sec delegates back to docs for the final check.
+
+All three agents always participate in every round regardless of who started it.
 
 ---
 
@@ -141,7 +145,7 @@ Each feature doc contains this section immediately after the status line:
 |----------|-------|-------|------------|-------|
 | GateCode | 1     | -/10  | -          | Pending |
 | GateSec  | 1     | -/10  | -          | Pending |
-| GateDocs | 1     | 9/10  | 2026-03-14 | Applied minor clarifications; ready |
+| GateDocs | 1     | -/10  | -          | Pending |
 
 **Status**: ⏳ Pending review
 **Approved**: No — requires all scores ≥ 9/10 in the same round
