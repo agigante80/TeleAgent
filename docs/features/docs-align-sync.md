@@ -1,6 +1,6 @@
 # Docs Align-Sync (`docs align-sync`)
 
-> Status: **Planned** | Priority: High | Last reviewed: 2026-03-15
+> Status: **Approved** | Priority: High | Last reviewed: 2026-03-15
 
 Keeps the four key user-facing reference files — `README.md`, `.env.example`, `docker-compose.yml.example`, and `scripts/lint_docs.py` — in sync with the actual source-of-truth (`src/config.py` and `docs/roadmap.md`).
 
@@ -31,14 +31,10 @@ Keeps the four key user-facing reference files — `README.md`, `.env.example`, 
 | GateDocs | 3 | 9/10 | 2026-03-15 | Fixed `_parse_env_example` signature to accept `config_vars` param (eliminates 2 redundant `extract_config_env_vars()` calls per lint run); clarified version bump wording. |
 | GateCode | 4 | 10/10 | 2026-03-15 | R3 Blocking Gap resolved: updated `_parse_env_example` in `scripts/lint_docs.py` to accept `config_vars: set[str]` as a parameter (removing internal `extract_config_env_vars()` call); both callers (`check_env_example_coverage`, `check_compose_coverage`) updated to pass the pre-extracted set. All 3 redundant `extract_config_env_vars()` calls per lint run now collapsed to 1. Linter still passes (17 specs clean). |
 | GateSec  | 4 | 10/10 | 2026-03-15 | R3 perf nit resolved — `_parse_env_example` now accepts `config_vars` param; single `extract_config_env_vars()` call per lint run. Spec and implementation fully aligned. No security concerns. |
-| GateDocs | 4 | -/10 | - | Pending |
+| GateDocs | 4 | 10/10 | 2026-03-15 | R3 blocking gap resolved and verified: `scripts/lint_docs.py` now calls `_parse_env_example(config_vars)` with the pre-extracted set; single `extract_config_env_vars()` call in `main()`. Spec, implementation, and AC fully consistent. Lint passes (17 specs). No further gaps. |
 
-**Status**: ⏳ Pending review
-**Approved**: No — requires all scores ≥ 9/10 in the same round
-
-### Round 3 Blocking Gap (GateCode 8/10)
-
-- `_parse_env_example` signature mismatch between spec and implementation: spec (updated in R3) now shows the function accepting `config_vars` as a parameter, but the implementation shipped with an internal `extract_config_env_vars()` call. GateCode should verify the live `scripts/lint_docs.py` matches the updated spec signature and, if not, apply the fix before scoring R4.
+**Status**: ✅ Approved
+**Approved**: Yes — R4 scores: GateCode 10/10 | GateSec 10/10 | GateDocs 10/10
 
 ---
 
