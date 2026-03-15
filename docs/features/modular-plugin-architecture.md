@@ -22,8 +22,11 @@ begins implementation.
 | GateCode | 1     | 7/10  | 2026-03-15 | 4 implementation bugs fixed: (1) `force=True` was silent — added `logger.warning()` on overwrite; (2) `_token` dataclass field breaks `__init__` kwarg and falsely claimed "not in repr()" — changed to `token: str = field(repr=False)`; (3) `AIConfig.secret_values()` used `self.codex_api_key` (flat, non-existent) — fixed to `self.codex.codex_api_key` (nested); (4) `_collect_secrets` used `__dict__`/`vars()` — changed to Pydantic v2 idiomatic `model_fields` iteration. OQ3 clarified: `commands/registry.py` defines the decorator; `bot.py` applies it — "shared definitions.py" option removed (circular import). |
 | GateSec  | 1     | 6/10  | 2026-03-15 (9130578) | 8 OQs added (OQ9–OQ16): registry hijack, token exposure, InMemoryStorage bounds, SecretProvider gap, ImportError swallowing, detector injection, discovery mechanism. See inline `⚠️` annotations. |
 | GateDocs | 1     | 6/10  | 2026-03-15 | 5 blockers fixed (OQ9 code/test mismatch, OQ10/11 code/criteria mismatch, `vars(settings)` Pydantic incompatibility, `AIConfig.codex` wrong reference, InMemoryStorage code/test desync). 6 gaps addressed (`.env.example` added, OQ14 test, OQ15 AC, COMMANDS dedup note, OQ16 comment corrected, `remote-control-fork-project.md` added to Files table). |
+| GateCode | 2     | 8/10  | 2026-03-15 | 4 gaps fixed inline: (1) Slack uses `_cmd_*` naming — Milestone 4 now requires an explicit rename step so `handler_attr` lookup works on both adapters; (2) `StorageConfig` sub-config added to Milestone 5c and Config Variables; (3) `_load_backends()` code sample updated to be OQ15-compliant (distinguishes deleted file vs missing dep); (4) dangling `RepoServiceABC` comment fixed — `NullRepoService` implements the same duck-typed interface with no inheritance. Added missing `test_validate_command_symmetry` to test plan. |
+| GateSec  | 2     | -/10  | -          | Pending |
+| GateDocs | 2     | -/10  | -          | Pending |
 
-**Status**: ⏳ In review
+**Status**: ⏳ In review — round 2
 **Approved**: No — requires all scores ≥ 9/10 in the same round
 
 ---
@@ -294,11 +297,21 @@ Change `_DETECTORS` from a module-level constant to a registry that can be exten
 
 ```python
 # src/runtime.py
+import logging
+
+logger = logging.getLogger(__name__)
+
 _DETECTORS: list[tuple[str, list[str]]] = []
 
-def register_detector(manifest: str, cmd: list[str]):
-    # ⚠️ OQ14 — no validation on cmd; arbitrary command injection if called by untrusted code
+def register_detector(manifest: str, cmd: list[str]) -> None:
+    """Register a dependency detector.
+
+    OQ14 mitigation: all registered detectors are logged at INFO level so operators
+    can audit what commands will run at startup. No allowlist enforcement — callers are
+    trusted (this is internal application code, not user input).
+    """
     _DETECTORS.append((manifest, cmd))
+    logger.info("Dep detector registered: %s → %s", manifest, cmd)
 
 # Built-in registrations (called at module level):
 register_detector("package.json",    ["npm", "install"])
@@ -354,8 +367,9 @@ End-to-end startup flow after refactor:
 main() → Settings.load() → _validate_config()
        → _load_registries()      # OQ16: uses a hardcoded module list (not glob/scan); see Step 5a
        → services = _build_services(settings)   # Services dataclass
-       → storage  = storage_registry.create(settings.storage.backend)
-       → audit    = audit_registry.create(...)
+       → storage  = storage_registry.create(settings.storage.storage_backend, DB_PATH)
+       → audit    = audit_registry.create("null" if not settings.audit.audit_enabled
+                        else settings.storage.audit_backend, AUDIT_DB_PATH)
        → backend  = backend_registry.create(settings.ai.ai_cli, settings.ai)
        → adapter  = platform_registry.create(settings.platform,
                         settings, backend, storage, services, start_time, audit)
@@ -405,6 +419,28 @@ A fork targeting only Slack + DirectAPI + no git hosting:
 | `AUDIT_BACKEND` | `Literal["sqlite","null"]` | `"sqlite"` (when `AUDIT_ENABLED=true`) | Audit log backend. Decouples enable/disable from backend choice. |
 
 > No existing env vars are renamed or removed.
+
+### `StorageConfig` sub-config (new — added to `src/config.py`)
+
+```python
+class StorageConfig(BaseSettings):
+    model_config = SettingsConfigDict(extra="ignore")
+
+    storage_backend: Literal["sqlite", "memory"] = Field("sqlite", alias="STORAGE_BACKEND")
+    audit_backend: Literal["sqlite", "null"] = Field("sqlite", alias="AUDIT_BACKEND")
+
+    def secret_values(self) -> list[str]:
+        return []  # StorageConfig holds no secrets
+```
+
+Add to `Settings`:
+```python
+storage: StorageConfig = Field(default_factory=StorageConfig)
+```
+
+`main.py` then uses `settings.storage.storage_backend` and `settings.storage.audit_backend`
+(as shown in Step 5c below). The `AUDIT_ENABLED` flag retains its meaning — a `False` value
+still forces the `"null"` backend regardless of `AUDIT_BACKEND`.
 
 ---
 
@@ -628,7 +664,8 @@ class NullRepoService:
     """No-op repo service for forks that manage their own source directory.
 
     OQ11 resolved — does NOT inherit from RepoService (no token attribute at all).
-    Implements the same interface via duck typing / ABC (see RepoServiceABC below).
+    Implements the same duck-typed interface as RepoService (clone/pull/status/configure_auth).
+    Type-checked via Protocol if strict typing is desired; no shared base class is required.
     """
     async def clone(self) -> None: pass
     async def pull(self) -> str: return "ℹ️ No repository configured."
@@ -716,10 +753,18 @@ def register_command(
     return decorator
 ```
 
-#### Step 4b — Annotate existing handler methods in `src/bot.py` and `src/platform/slack.py`
+#### Step 4b — Rename Slack handlers and annotate in `src/bot.py`
+
+> **Naming alignment (round 2 fix)**: The current codebase uses `cmd_*` on `_BotHandlers`
+> (Telegram) and `_cmd_*` on `SlackBot` (private-prefixed). Since `CommandDef.handler_attr`
+> stores the method name derived from the decorated function in `bot.py` (e.g., `"cmd_run"`),
+> the Slack adapter must expose matching public method names. As part of Milestone 4,
+> rename all `_cmd_*` methods in `src/platform/slack.py` to `cmd_*`. The dispatch dict is
+> being removed anyway; the underscore prefix only exists to discourage external use, which
+> the `Services` injection pattern already addresses.
 
 ```python
-# src/bot.py  (on _BotHandlers)
+# src/bot.py  (on _BotHandlers) — @register_command applied here only (OQ3)
 @register_command("run", "Execute a shell command in the repo directory",
                   platforms={"telegram", "slack"}, requires_args=True, destructive=True)
 async def cmd_run(self, update, context): ...
@@ -727,6 +772,13 @@ async def cmd_run(self, update, context): ...
 @register_command("sync", "Pull latest changes from the remote repository",
                   platforms={"telegram", "slack"})
 async def cmd_sync(self, update, context): ...
+```
+
+```python
+# src/platform/slack.py — rename _cmd_* → cmd_* ; no @register_command calls (OQ3)
+# SlackAdapter.cmd_run / cmd_sync / … match handler_attr from the registry.
+async def cmd_run(self, event, say): ...
+async def cmd_sync(self, event, say): ...
 ```
 
 #### Step 4c — Generate `gate help` from `COMMANDS`
@@ -765,12 +817,34 @@ Replace `factory.py`'s `if/elif` chain with:
 
 ```python
 def _load_backends() -> None:
+    """Import each backend module so its @backend_registry.register() decorator fires.
+
+    OQ15 fix: distinguish "fork deleted the file" (skip silently) from "missing pip
+    dependency" (re-raise with an actionable message so the operator knows to install).
+    """
     import importlib
+    import importlib.util
+
     for mod in ("src.ai.copilot", "src.ai.codex", "src.ai.direct"):
+        # Convert dotted module path to a relative file path for existence check.
+        rel_path = mod.replace(".", "/") + ".py"
+        if importlib.util.find_spec(mod) is None and not _module_file_exists(rel_path):
+            continue  # file deleted by fork — skip silently
         try:
             importlib.import_module(mod)
-        except ImportError:
-            pass  # ⚠️ OQ15 — also swallows ModuleNotFoundError from missing pip deps
+        except ImportError as exc:
+            # File exists but import failed → missing pip dependency or syntax error.
+            raise ImportError(
+                f"Failed to import backend module '{mod}'. "
+                f"Is the required package installed? Original error: {exc}"
+            ) from exc
+
+
+def _module_file_exists(rel_path: str) -> bool:
+    """Return True if the module file exists on disk (relative to the package root)."""
+    import os
+    return os.path.exists(os.path.join(os.path.dirname(__file__), "..", "..", rel_path))
+
 
 def create_backend(ai: AIConfig) -> AICLIBackend:
     _load_backends()
@@ -856,11 +930,12 @@ class NullAuditLog(AuditLog): ...
 `main.py` storage init:
 
 ```python
-backend_name = settings.storage.backend  # new field, default "sqlite"
-storage = storage_registry.create(backend_name, DB_PATH)
+storage_backend = settings.storage.storage_backend  # "sqlite" or "memory"
+storage = storage_registry.create(storage_backend, DB_PATH)
 await storage.init()
 
-audit_backend = "sqlite" if settings.audit.audit_enabled else "null"
+# AUDIT_ENABLED=false forces null backend regardless of AUDIT_BACKEND setting
+audit_backend = "null" if not settings.audit.audit_enabled else settings.storage.audit_backend
 audit = audit_registry.create(audit_backend, AUDIT_DB_PATH)
 await audit.init()
 ```
@@ -888,7 +963,7 @@ register_detector("Cargo.toml", ["cargo", "build"])
 | `src/redact.py` | **Edit** | Add `SecretProvider` protocol; rewrite `_collect_secrets` |
 | `src/config.py` | **Edit** | Add `secret_values()` to each sub-config; add `STORAGE_BACKEND` / `AUDIT_BACKEND` fields to a new `StorageConfig` sub-config |
 | `src/bot.py` | **Edit** | Receive `Services`; decorate handlers with `@register_command`; register `TelegramAdapter` in `platform_registry`; remove duplicated dispatch dict |
-| `src/platform/slack.py` | **Edit** | Receive `Services`; decorate handlers with `@register_command`; register `SlackAdapter`; remove duplicated dispatch dict |
+| `src/platform/slack.py` | **Edit** | Rename `_cmd_*` → `cmd_*` handlers; receive `Services`; remove duplicated dispatch dict; register `SlackAdapter` in `platform_registry` |
 | `src/platform/common.py` | **Edit** | Move `is_allowed_slack()` to `SlackAdapter` (it is not platform-agnostic) |
 | `src/ai/copilot.py` | **Edit** | `@backend_registry.register("copilot")` |
 | `src/ai/codex.py` | **Edit** | `@backend_registry.register("codex")` |
@@ -954,6 +1029,8 @@ No new runtime or dev dependencies.
 | `test_platform_filter` | Telegram-only command not returned for Slack |
 | `test_help_text_generated_from_registry` | Help string contains all registered command names |
 | `test_destructive_flag` | `CommandDef.destructive=True` is preserved |
+| `test_validate_command_symmetry_passes` | `_validate_command_symmetry()` does not raise when both adapters expose all shared-platform handler methods |
+| `test_validate_command_symmetry_raises_on_missing_handler` | `_validate_command_symmetry()` raises `AttributeError` (or equivalent) when a shared-platform command has no matching `handler_attr` on one adapter |
 
 ### `tests/unit/test_redact.py` additions
 
