@@ -20,7 +20,7 @@ Block Kit "Cancel" button interrupt the running pipeline cleanly and notify the 
 | GateSec  | 1 | 7/10 | 2026-03-15 | 5 findings (1 blocker, 3 medium, 1 low) — see GateSec R1 below |
 | GateDocs | 1 | 9/10 | 2026-03-15 | Applied 4 inline fixes (test files table, AC slash-command wording, redundant contract test, modularity-debt note); doc is implementation-ready from docs perspective |
 | GateCode | 3 | 9/10 | 2026-03-15 | All 5 Round 1 Blocking Gaps resolved — see GateCode R3 below |
-| GateSec  | 2 | -/10 | - | Pending |
+| GateSec  | 2 | 9/10 | 2026-03-15 | All 5 R1 findings resolved — race guard, clear_history stance, audit gap tracked, timeout risk accepted, re-entrance contract documented |
 | GateDocs | 2 | -/10 | - | Pending |
 
 **Status**: ⏳ Round 2 in progress — GateCode R3 9/10 (all 5 Round 1 Blocking Gaps resolved); GateSec R2 and GateDocs R2 pending
@@ -138,6 +138,66 @@ One point held back: the `_handle_cancel` docstring mentions a follow-up ticket 
 number yet exists (it will be created on merge, per the new AC). No blocker; GateSec should
 confirm the re-entrance contract wording in the Architecture Note is sufficient before
 approving.
+
+---
+
+### GateSec R2 Findings (2026-03-15)
+
+**Score: 9/10** — All 5 R1 findings fully resolved by GateCode R3. No new security concerns
+introduced. Spec is implementation-ready from a security perspective.
+
+#### ✅ R1 Finding 1 — `backend.close()` race — resolved
+
+The race guard (`if current is None or current is task`) is now explicit in:
+- Step 2b code sample (line 623–626)
+- Recommended Solution pseudocode (line 498–500)
+- Architecture Note "backend.close() is defence-in-depth, guarded" (lines 538–548)
+
+Both `close()` and `clear_history()` are inside the guard. Verified against actual codebase:
+`_dispatch()` does not hold locks or references that would interfere with the guard check.
+No residual race window.
+
+#### ✅ R1 Finding 2 — `clear_history()` chat-agnostic — resolved
+
+Architecture Note (lines 528–537) now documents the chosen v1 stance: call `clear_history()`
+automatically after cancel, inside the race guard. Rationale is sound — inconsistent
+half-written history is worse than a clean slate for single-tenant. Multi-channel
+`DirectAPIBackend` trade-off explicitly acknowledged. No cross-tenant data *leakage*;
+data *loss* is accepted and documented.
+
+#### ✅ R1 Finding 3 — Audit `user_id=None` — resolved
+
+Edge Case 9 (lines 1116–1124) formally closes this as out-of-scope for v1 with rationale.
+Acceptance Criterion added (line 1147): follow-up issue to thread `user_id` through
+`_dispatch()`. Verified: the `_dispatch` signature in `slack.py:635` confirms `user_id` is
+not available in the current calling convention — this is a cross-cutting refactor, correctly
+scoped out. The `_handle_cancel` docstring (Step 3h) documents the gap inline.
+
+#### ✅ R1 Finding 4 — `AI_TIMEOUT_SECS=0` indefinite blocking — resolved
+
+Architecture Note (lines 549–557) formally accepts indefinite blocking as a v1 risk for
+single-operator deployments. Hard ceiling deferred with rationale (UX decisions out of scope).
+Operators are advised to set `AI_TIMEOUT_SECS > 0` for shared deployments. Acceptable stance.
+
+#### ✅ R1 Finding 5 — `backend.close()` re-entrance contract — resolved
+
+`src/ai/adapter.py` added to Files table (line 954) with re-entrance requirement. Architecture
+Note (lines 538–548) documents that `close()` is defence-in-depth, not lifecycle shutdown, and
+that future backends must ensure re-entrance. GateCode R3 residual (no issue number for
+follow-up ticket) is tracked via AC and will be created on merge — not a security concern.
+
+#### Security verification summary
+
+- *Auth guards*: `@_requires_auth` on Telegram `cmd_cancel` ✅; `_is_allowed()` call in Slack
+  `_on_cancel_ai` ✅; Slack text-command path goes through `_is_allowed()` in `_handle_message`
+  before reaching `_dispatch()` ✅.
+- *No user input reaches subprocess*: cancel command takes no arguments; lookup is by
+  `chat_id`/`channel` key only ✅.
+- *No new secrets*: `CANCEL_TIMEOUT_SECS` is a plain integer; no `SecretRedactor` coverage
+  needed ✅.
+- *`_KNOWN_SUBS` routing*: Step 3i adds `"cancel"` to the set, matching the `_dispatch` table
+  entry ✅.
+- *`build_app` registration*: Step 2f adds `CommandHandler(f"{p}cancel", h.cmd_cancel)` ✅.
 
 ---
 
