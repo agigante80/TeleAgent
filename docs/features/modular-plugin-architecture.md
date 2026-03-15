@@ -23,7 +23,7 @@ begins implementation.
 | GateSec  | 1     | 6/10  | 2026-03-15 (9130578) | 8 OQs added (OQ9–OQ16): registry hijack, token exposure, InMemoryStorage bounds, SecretProvider gap, ImportError swallowing, detector injection, discovery mechanism. See inline `⚠️` annotations. |
 | GateDocs | 1     | 6/10  | 2026-03-15 | 5 blockers fixed (OQ9 code/test mismatch, OQ10/11 code/criteria mismatch, `vars(settings)` Pydantic incompatibility, `AIConfig.codex` wrong reference, InMemoryStorage code/test desync). 6 gaps addressed (`.env.example` added, OQ14 test, OQ15 AC, COMMANDS dedup note, OQ16 comment corrected, `remote-control-fork-project.md` added to Files table). |
 | GateCode | 2     | 8/10  | 2026-03-15 | 4 gaps fixed inline: (1) Slack uses `_cmd_*` naming — Milestone 4 now requires an explicit rename step so `handler_attr` lookup works on both adapters; (2) `StorageConfig` sub-config added to Milestone 5c and Config Variables; (3) `_load_backends()` code sample updated to be OQ15-compliant (distinguishes deleted file vs missing dep); (4) dangling `RepoServiceABC` comment fixed — `NullRepoService` implements the same duck-typed interface with no inheritance. Added missing `test_validate_command_symmetry` to test plan. |
-| GateSec  | 2     | -/10  | -          | Pending |
+| GateSec  | 2     | 8/10  | 2026-03-15 (cd13e43) | R1 OQs resolved: OQ9 (registry hijack → ValueError default), OQ11 (NullRepoService standalone), OQ12 (InMemoryStorage bounded), OQ14 (accepted + logged), OQ15 (find_spec pattern), OQ16 (hardcoded list). OQ10 partially resolved (repr=False). OQ13 mitigated (test coverage). 2 new: OQ17 (platform import inconsistency with Step 5a), OQ18 (COMMANDS list no uniqueness check). |
 | GateDocs | 2     | -/10  | -          | Pending |
 
 **Status**: ⏳ In review — round 2
@@ -885,6 +885,12 @@ adapter = platform_registry.create(
 await adapter.start()
 ```
 
+> ⚠️ **OQ17** — This platform import block still uses the old `try/except ImportError: pass`
+> pattern. It should use the same OQ15-compliant `find_spec` + `_module_file_exists()`
+> approach as `_load_backends()` in Step 5a. A missing `slack-bolt` dependency with
+> `src/platform/slack.py` present would be silently swallowed, producing a confusing
+> `ValueError: unknown key 'slack'` instead of an actionable installation error.
+
 #### Step 5c — Register storage and audit backends
 
 ```python
@@ -1237,78 +1243,72 @@ No env vars renamed or removed. All changes are internal. → **MINOR** bump: `0
    `STORAGE_BACKEND=memory` via env — the in-memory backend eliminates the need for
    temp-file fixtures in most startup tests.
 
-9. **OQ9 — Registry key overwrite enables backend hijacking** — `Registry.register()`
-   logs a warning but *allows* overwriting an existing key. If `_load_registries()` imports
-   modules in sequence and a later import re-registers an existing key (e.g., a fork's
-   `custom_copilot.py` registers `"copilot"` over the real one), the legitimate backend is
-   silently replaced. Combined with `pip install -e .` on the user's repo (runtime.py line 12),
-   which can inject packages into `sys.path`, this creates a backend-hijacking vector.
-   **Recommendation**: raise `ValueError` on duplicate keys by default; add an explicit
-   `force=True` parameter for intentional overrides. Severity: 🔴 HIGH.
+9. **OQ9 — Registry key overwrite enables backend hijacking** — ✅ *RESOLVED in R2.*
+   `Registry.register()` now raises `ValueError` on duplicate keys by default.
+   `force=True` parameter added for intentional fork overrides, with `logger.warning()`
+   on every overwrite. See Milestone 1 code sample (lines 480–501).
 
 10. **OQ10 — `Services.repo.token` exposes raw credential as public attribute** —
-    `RepoService` stores `github_repo_token` as a plain public `str` attribute. Since
-    `Services` is injected into every platform adapter, every handler method can read
-    `self._services.repo.token` directly. While `self._settings.github.github_repo_token`
-    is equally accessible today, the `Services` dataclass is explicitly designed to be
-    passed around freely and is the *recommended* interface post-refactor. Consider using
-    a private attribute with a getter, or passing the token only at `clone()`/`configure_auth()`
-    call sites. Severity: 🟡 MEDIUM.
+    ⚠️ *PARTIALLY RESOLVED.* `field(repr=False)` prevents accidental logging of the
+    token via `repr(services.repo)`, which addresses the highest-frequency leak vector.
+    However, the token remains a public attribute accessible via `self._services.repo.token`.
+    This matches the existing access pattern (`self._settings.github.github_repo_token`),
+    so it is *not a regression* — but the `Services` pattern encourages broader
+    distribution than `_settings`. Accepted with the `repr=False` mitigation.
+    Residual risk: 🟡 LOW.
 
-11. **OQ11 — `NullRepoService` inherits `token` attribute** — `NullRepoService` subclasses
-    `RepoService` and defaults `token=""`, but the attribute is still public. A fork
-    misconfiguration (e.g., `REPO_PROVIDER=none` while `REPO_TOKEN` is set) would store
-    the token in `NullRepoService` where it's never used for cloning but is accessible to
-    every handler via `services.repo.token`. **Recommendation**: override `__init__` to
-    discard the token, or don't inherit from `RepoService` — use the same ABC instead.
-    Severity: 🟡 MEDIUM.
+11. **OQ11 — `NullRepoService` inherits `token` attribute** — ✅ *RESOLVED in R2.*
+    `NullRepoService` is now a standalone class — no inheritance from `RepoService`,
+    no `token` attribute at all. Implements the same duck-typed interface
+    (`clone`/`pull`/`status`/`configure_auth`). See Step 3a code sample (lines 663–673).
 
-12. **OQ12 — `InMemoryStorage` unbounded growth / no isolation** — The proposed
-    `InMemoryStorage` uses `dict[str, list]` with no TTL, no maximum size, and no
-    per-chat memory cap. In a multi-user production fork, memory grows without bound.
-    Additionally, `InMemoryStorage` survives `gate restart` (OQ4 acknowledges this) while
-    the backend is re-created, leading to history/state inconsistency.
-    **Recommendation**: add `max_entries_per_chat: int = 1000` constructor parameter;
-    document `STORAGE_BACKEND=memory` as test-only in the env var description.
-    Severity: 🟡 MEDIUM.
+12. **OQ12 — `InMemoryStorage` unbounded growth / no isolation** — ✅ *RESOLVED in R2.*
+    `InMemoryStorage` now enforces `max_entries_per_chat=200` with eviction of oldest
+    entries. Per-chat dict keys provide session isolation. See Step 5c code sample
+    (lines 898–916).
 
-13. **OQ13 — `SecretProvider` opt-in gap** — The `SecretProvider` protocol is
-    `@runtime_checkable` and `_collect_secrets` uses `isinstance()`. If a new sub-config
-    class holds secrets but forgets to implement `secret_values()`, its secrets are
-    silently excluded from redaction — the same class of bug that caused the v0.13.0
-    `CODEX_API_KEY` leak. The problem is moved, not solved.
-    **Recommendation**: add a startup assertion in `_collect_secrets` that all sub-config
-    classes satisfy `isinstance(attr, SecretProvider)`, or add a unit test that enumerates
-    sub-configs and asserts the protocol. Severity: 🟡 MEDIUM.
+13. **OQ13 — `SecretProvider` opt-in gap** — ⚠️ *MITIGATED, not fully resolved.*
+    Test `test_all_sub_configs_implement_secret_provider` catches missing implementations
+    in CI (see Test Plan). However, there is no *runtime* enforcement — a new sub-config
+    added without `secret_values()` silently excludes its secrets from redaction until
+    CI catches it. The test is sufficient for the core repo (CI is mandatory), but forks
+    that skip CI inherit the gap. Residual risk: 🟡 LOW.
 
-14. **OQ14 — `register_detector()` no command validation** — The function accepts arbitrary
-    `cmd: list[str]`. While `_DETECTORS` is currently a module-level constant (pre-existing
-    risk), making it extensible at runtime via `register_detector()` widens the attack
-    surface: any imported code can register arbitrary commands that execute at startup via
-    `asyncio.create_subprocess_exec`. **Recommendation**: validate commands against an
-    allowlist of known package managers, or log all registered detectors at startup for
-    auditability. Severity: 🟡 MEDIUM.
+14. **OQ14 — `register_detector()` no command validation** — ✅ *RESOLVED in R2.*
+    Accepted as internal API — callers are trusted application code, not user input.
+    All registered detectors are now logged at `INFO` level for operator auditability.
+    See `register_detector()` docstring (lines 306–314).
 
-15. **OQ15 — `_load_registries()` swallows `ModuleNotFoundError`** — `except ImportError: pass`
-    is intended to handle "fork deleted this backend file" but `ModuleNotFoundError` (a
-    subclass of `ImportError`) is also caught. If a backend has a missing pip dependency
-    (e.g., `import anthropic` fails in `direct.py`), the backend is silently skipped rather
-    than raising a clear installation error. The operator gets a confusing `ValueError:
-    unknown key 'api'` at `registry.create()` time.
-    **Recommendation**: catch `ImportError`, check if the module file exists on disk, and
-    re-raise if it does (indicating a dependency issue, not a deleted file). Or use
-    `importlib.util.find_spec()` first to distinguish "file missing" from "import failed".
-    Severity: 🟡 MEDIUM.
+15. **OQ15 — `_load_registries()` swallows `ModuleNotFoundError`** — ✅ *RESOLVED in R2.*
+    `_load_backends()` now uses `importlib.util.find_spec()` + `_module_file_exists()`
+    to distinguish "fork deleted the file" (skip silently) from "missing pip
+    dependency" (re-raise with actionable message). See Step 5a code sample
+    (lines 819–846).
 
-16. **OQ16 — `_load_registries()` discovery mechanism unspecified** — The startup flow
-    comment says "imports all src/ai/\*, src/platform/\*, src/storage/\*" but the code sample
-    shows a hardcoded list of module paths. If the implementation uses filesystem glob/scan
-    instead of a hardcoded list, a file planted in `src/ai/` by a malicious repo checkout
-    (in dev environments where `REPO_DIR` overlaps with the application directory) could be
-    auto-discovered and imported. **Recommendation**: always use a hardcoded module list in
-    `_load_registries()`, never `os.listdir()` or `pkgutil.iter_modules()`. Document this
-    as a security invariant. Severity: 🟡 MEDIUM.
+16. **OQ16 — `_load_registries()` discovery mechanism unspecified** — ✅ *RESOLVED in R2.*
+    Startup flow confirmed to use a hardcoded module list (not glob/scan). Step 5a
+    shows `for mod in ("src.ai.copilot", "src.ai.codex", "src.ai.direct"):` —
+    explicit, auditable, not vulnerable to planted files. Comment in startup flow
+    (line 368) documents this as a security invariant.
 
+
+17. **OQ17 — Platform import pattern inconsistency (Step 5b)** — Step 5a
+    (`_load_backends()`) uses the OQ15-compliant `find_spec` + `_module_file_exists()`
+    approach to distinguish deleted files from broken imports. However, Step 5b
+    (platform registration in `main.py`) still uses the old `try: importlib.import_module(mod)
+    except ImportError: pass` pattern. If `slack-bolt` is not installed but
+    `src/platform/slack.py` exists, the `ImportError` is silently swallowed and the
+    operator gets a confusing `ValueError: unknown key 'slack'` instead of
+    "install slack-bolt". *Apply the same `_load_backends()` pattern to platform,
+    storage, and audit module loading.* Severity: 🟡 MEDIUM.
+
+18. **OQ18 — `COMMANDS` list allows duplicate command names** — `register_command()`
+    appends to a plain `list[CommandDef]` with no uniqueness check on `name`. Two
+    modules registering `name="run"` silently create duplicate entries. Unlike
+    `Registry.register()` (which now raises `ValueError` per OQ9), the command
+    registry has no guard. `_validate_command_symmetry()` checks handler presence
+    but not name uniqueness. *Add a duplicate-name check in `register_command()`,
+    raising `ValueError` if `name` is already in `COMMANDS`.* Severity: 🟡 LOW.
 ---
 
 ## Acceptance Criteria
@@ -1340,3 +1340,5 @@ No env vars renamed or removed. All changes are internal. → **MINOR** bump: `0
       existing users.
 - [ ] `docs/features/remote-control-fork-project.md` created from template and lists
       this milestone as a prerequisite.
+- [ ] Platform and storage/audit module loading uses the same OQ15-compliant import pattern as `_load_backends()` — not bare `try/except ImportError: pass` (OQ17).
+- [ ] `register_command()` raises `ValueError` on duplicate `name` entries in `COMMANDS` (OQ18).
