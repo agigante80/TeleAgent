@@ -82,6 +82,38 @@ class TestPatternRedaction:
         result = redactor.redact(text)
         assert "[REDACTED]" in result
 
+    def test_openai_proj_key_redacted(self):
+        settings = _make_settings()
+        redactor = SecretRedactor(settings)
+        text = "key=sk-proj-abc123def456ghi789jkl0mnopqr rest"
+        result = redactor.redact(text)
+        assert "[REDACTED]" in result
+        assert "sk-proj-" not in result
+
+    def test_openai_org_key_redacted(self):
+        settings = _make_settings()
+        redactor = SecretRedactor(settings)
+        text = "key=sk-org-xyz987uvw654rst321qpo098 rest"
+        result = redactor.redact(text)
+        assert "[REDACTED]" in result
+        assert "sk-org-" not in result
+
+    def test_openai_svcacct_key_redacted(self):
+        settings = _make_settings()
+        redactor = SecretRedactor(settings)
+        text = "AI_API_KEY=sk-svcacct-abc123def456ghi789jkl0mnopqr"
+        result = redactor.redact(text)
+        assert "[REDACTED]" in result
+        assert "sk-svcacct-" not in result
+
+    def test_anthropic_key_redacted(self):
+        settings = _make_settings()
+        redactor = SecretRedactor(settings)
+        text = "ANTHROPIC_KEY=sk-ant-api03-abc123def456ghi789jkl0mn rest"
+        result = redactor.redact(text)
+        assert "[REDACTED]" in result
+        assert "sk-ant-api03-" not in result
+
     def test_url_with_creds_redacted(self):
         settings = _make_settings()
         redactor = SecretRedactor(settings)

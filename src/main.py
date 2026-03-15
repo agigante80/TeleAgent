@@ -105,7 +105,7 @@ async def _install_commit_msg_hook() -> None:
             "    re.compile(r'xoxp-[A-Za-z0-9\\-]{20,}'),\n"
             "    re.compile(r'xapp-[A-Za-z0-9\\-]{20,}'),\n"
             "    re.compile(r'xoxs-[A-Za-z0-9\\-]{20,}'),\n"
-            "    re.compile(r'sk-[A-Za-z0-9]{20,}'),\n"
+            "    re.compile(r'sk-(?:proj-|org-|svcacct-|ant-api03-)?[A-Za-z0-9\\-_]{20,}'),\n"
             "    re.compile(r'Bearer\\s+[A-Za-z0-9\\-._~+/]{20,}=*'),\n"
             "    re.compile(r'https?://[^\\s@]+:[^\\s@]+@[^\\s]+'),\n"
             "]\n"
