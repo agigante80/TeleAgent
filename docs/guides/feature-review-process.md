@@ -198,7 +198,7 @@ date (ISO format: `YYYY-MM-DD`) and a one-sentence note summarising your key fin
 Branch: develop | Commit: <SHA>
 GateCode score: <X>/10. Please sync to that commit, review the doc, make inline improvements,
 update your row in the Team Review table with your score, commit to develop, and DELEGATE
-to docs when done.]
+to docs when done. See `docs/guides/feature-review-process.md` for the full protocol.]
 ```
 
 ### GateSec → GateDocs
@@ -210,7 +210,8 @@ GateCode: <X>/10 | GateSec: <Y>/10. Please sync to that commit, review the doc, 
 improvements, update your row in the Team Review table with your score, and commit to develop.
 If ALL scores in round <N> are ≥ 9, mark the doc Approved and notify the channel.
 Otherwise DELEGATE back to dev for round <N+1> — reference the doc for gap details,
-do not list specific security gaps in the delegation message.]
+do not list specific security gaps in the delegation message.
+See `docs/guides/feature-review-process.md` for the full protocol.]
 ```
 
 ### GateDocs → GateCode (re-review round)
@@ -220,7 +221,8 @@ do not list specific security gaps in the delegation message.]
 Branch: develop | Commit: <SHA>
 Round <N> scores: GateCode <X>/10 | GateSec <Y>/10 | GateDocs <Z>/10.
 See doc for blocking gaps (do not list specifics here). Please sync to that commit, address the
-gaps, update your round <N+1> row in the Team Review table, commit, and DELEGATE to sec.]
+gaps, update your round <N+1> row in the Team Review table, commit, and DELEGATE to sec.
+See `docs/guides/feature-review-process.md` for the full protocol.]
 ```
 
 ---
