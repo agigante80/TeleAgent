@@ -16,11 +16,11 @@ Block Kit "Cancel" button interrupt the running pipeline cleanly and notify the 
 | Reviewer | Round | Score | Date | Notes |
 |----------|-------|-------|------|-------|
 | GateCode | 1 | 6/10 | 2026-03-15 | 6 blockers/gaps — see R1 findings below |
-| GateCode | 2 | 7/10 | 2026-03-15 | 2 blockers, 3 gaps — see R2 findings below |
+| GateCode | 2 | 7/10 | 2026-03-15 | 2 blockers, 3 gaps — addressed by GateDocs |
 | GateSec  | 1 | -/10 | - | Pending |
 | GateDocs | 1 | -/10 | - | Pending |
 
-**Status**: ⏳ In review — GateCode R2 findings must be addressed before GateSec/GateDocs rounds
+**Status**: ⏳ In review — GateDocs addressed R2 findings; ready for GateSec R1
 
 ### GateCode R2 Findings (2026-03-15)
 
@@ -460,6 +460,12 @@ async def _cancel_active_task(self, chat_id: str) -> bool:
         return False
     task.cancel()
     with suppress(asyncio.CancelledError, Exception):
+        # asyncio.shield(task) protects the underlying task from a second cancellation
+        # if _cancel_active_task() itself is cancelled while waiting (e.g. a race with
+        # gate restart). Without shield, a cancellation of this coroutine would deliver
+        # a second CancelledError into an already-cancelling task.
+        # If double-cancel protection is not needed, this can be simplified to:
+        #   await asyncio.wait_for(task, timeout=...)
         await asyncio.wait_for(
             asyncio.shield(task),
             timeout=self._settings.bot.cancel_timeout_secs,
@@ -531,6 +537,17 @@ async def cmd_cancel(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -
 ```python
 "cancel": self.cmd_cancel,
 ```
+
+**2f.** Register `cmd_cancel` with a `CommandHandler` in `build_app()` so that the `/gatecancel`
+Telegram slash command form also works. Without this, `/gatecancel` is silently forwarded to the
+AI pipeline as plain text instead of invoking `cmd_cancel`:
+
+```python
+# In build_app(), alongside the other CommandHandler registrations:
+app.add_handler(CommandHandler(f"{p}cancel", h.cmd_cancel))
+```
+
+Update the Files table entry for `src/bot.py` to include "add `CommandHandler` in `build_app()`".
 
 ---
 
@@ -641,15 +658,21 @@ self._app.action("cancel_ai")(self._on_cancel_ai)
 
 ```python
 async def _handle_cancel(
-    self, say, client, args: list[str], channel: str,
-    thread_ts: str | None, user_id: str | None,
+    self, args: list[str], say, client, channel: str,
+    *, thread_ts: str | None = None,
 ) -> None:
-    """Handle `gate cancel` text command — cancel the in-progress AI request for this channel."""
+    """Handle `gate cancel` text command — cancel the in-progress AI request for this channel.
+
+    Note: user_id is not available in the _dispatch calling convention
+    (slack.py:665: await handler(args, say, client, channel, thread_ts=thread_ts)).
+    Audit is recorded with user_id=None for text-command cancels; Block Kit button
+    cancels (_on_cancel_ai) have user_id available via body["user"]["id"].
+    """
     cancelled = await self._cancel_active_task(channel)
     msg = "⚠️ Request cancelled." if cancelled else "ℹ️ No request in progress."
     await self._reply(client, channel, msg, thread_ts)
     await self._audit.record(
-        platform="slack", chat_id=channel, user_id=user_id,
+        platform="slack", chat_id=channel, user_id=None,
         action="cancel", status="cancelled" if cancelled else "no_op",
     )
 ```
@@ -715,10 +738,57 @@ finally:
     self._active_tasks.pop(chat_id, None)
 ```
 
-**4b. `src/platform/slack.py` — mirror the same pattern** in `_run_ai_pipeline`'s streaming branch,
-wrapping `self._stream_to_slack(...)` in `asyncio.create_task()` and storing it in
-`self._active_tasks[channel]` with the same in-flight guard, `CancelledError`, and `TimeoutError`
-handlers as above.
+**4b. `src/platform/slack.py` — streaming branch in `_run_ai_pipeline`:**
+
+```python
+# Streaming branch (replaces the bare await self._stream_to_slack(...) call)
+
+# In-flight guard (same as non-streaming path):
+if channel in self._active_tasks and not self._active_tasks[channel].done():
+    await self._reply(
+        client, channel,
+        "⏳ A request is already in progress. Use `gate cancel` to stop it.",
+        thread_ts,
+    )
+    return
+
+stream_task = asyncio.create_task(
+    self._stream_to_slack(
+        client=client,
+        channel=channel,
+        thread_ts=thread_ts,
+        backend=self._backend,
+        prompt=prompt,
+        max_chars=self._settings.bot.max_output_chars,
+        throttle_secs=self._settings.bot.stream_throttle_secs,
+    )
+)
+self._active_tasks[channel] = stream_task
+try:
+    timeout = cfg.ai_timeout_secs if cfg.ai_timeout_secs > 0 else None
+    await asyncio.wait_for(asyncio.shield(stream_task), timeout=timeout)
+except asyncio.CancelledError:
+    await self._reply(client, channel, "⚠️ Request cancelled.", thread_ts)
+    return
+except asyncio.TimeoutError:
+    await self._cancel_active_task(channel)
+    await self._reply(
+        client, channel,
+        f"⚠️ Stream cancelled after {cfg.ai_timeout_secs}s.",
+        thread_ts,
+    )
+    return
+finally:
+    self._active_tasks.pop(channel, None)
+    ticker.cancel()
+    with suppress(asyncio.CancelledError):
+        await ticker
+```
+
+Key differences from the Telegram path (Step 4a): `_stream_to_slack` is an instance method (not a
+module-level function), so it accesses `self` and the `client.chat_update` Slack API. The `thread_ts`
+argument must be threaded through so replies land in the correct thread. The in-flight key is
+`channel` (not `chat_id`).
 
 ---
 
@@ -727,7 +797,7 @@ handlers as above.
 | File | Action | Summary of change |
 |------|--------|-------------------|
 | `src/config.py` | **Edit** | Add `cancel_timeout_secs: int = Field(5, env="CANCEL_TIMEOUT_SECS")` to `BotConfig` |
-| `src/bot.py` | **Edit** | Add `_active_tasks` dict, `_cancel_active_task()`, `cmd_cancel`, in-flight guard in `_run_ai_pipeline`, `CancelledError` handling, dispatch registration |
+| `src/bot.py` | **Edit** | Add `_active_tasks` dict, `_cancel_active_task()`, `cmd_cancel`, in-flight guard in `_run_ai_pipeline`, `CancelledError` handling, dispatch registration, `CommandHandler` in `build_app()` |
 | `src/platform/slack.py` | **Edit** | Mirror all of the above; add `"cancel"` to `_KNOWN_SUBS` (routing gate); add `_THINKING_BLOCKS` with Cancel button; add `_on_cancel_ai` handler; add `_handle_cancel` text-command handler; register `cancel_ai` action |
 | `README.md` | **Edit** | Feature bullet, `CANCEL_TIMEOUT_SECS` env var row, `gate cancel` command row |
 | `docs/features/request-cancellation.md` | **Edit** | Mark `Implemented` on merge |
@@ -863,17 +933,28 @@ Run `pytest tests/ --cov=src --cov-report=term-missing`. Target: all branches of
    `_on_cancel_run`. If the original request was in a thread, the `thread_ts` is not available
    in the action payload — post to channel root with a note if needed.
 
-6. **Streaming path complexity** — *Resolved in Step 4.* `_stream_to_telegram` and
+6. **Double-notification on user-initiated cancel** — When `cmd_cancel` (Telegram) or
+   `_handle_cancel` / `_on_cancel_ai` (Slack) calls `_cancel_active_task()`, the task receives
+   `CancelledError`. The pipeline's `except asyncio.CancelledError` block fires and edits the
+   "Thinking…" placeholder to "⚠️ Request cancelled." (or removes the Slack Cancel button).
+   Simultaneously, the cancel command itself sends a second "⚠️ Request cancelled." reply
+   confirming receipt. *Both notifications are intentional and expected*:
+   - The in-place edit on the thinking placeholder gives immediate visual feedback in-context.
+   - The separate reply from `cmd_cancel` / `_handle_cancel` confirms that the command was
+     received and acted upon (matches the `_on_cancel_run` shell cancel UX pattern).
+   No action required — document this as accepted dual-feedback UX.
+
+7. **Streaming path complexity** — *Resolved in Step 4.* `_stream_to_telegram` and
    `_stream_to_slack` are module-level / method functions and cannot access `self._active_tasks`.
    The fix wraps the streaming coroutine in `asyncio.create_task()` at the call site in
    `_run_ai_pipeline` and stores the task in `_active_tasks[chat_id]`. The streaming helper
    functions themselves are unchanged.
 
-7. **`asyncio.shield` usage** — *Resolved in Steps 2c and 3c.* `asyncio.shield(task)` prevents
-   the timeout's cancellation from propagating into the underlying task. On `AI_TIMEOUT_SECS`
-   expiry the shield future is cancelled but the underlying task keeps running. Both `_run_ai_pipeline`
-   implementations now call `await self._cancel_active_task(chat_id)` in the `except asyncio.TimeoutError`
-   handler to explicitly stop the task, then notify the user.
+8. **`asyncio.shield` usage** — *Resolved in Steps 2b, 2c, and 3c.* See the `asyncio.shield`
+   Architecture Note for the rationale. `asyncio.shield(task)` in `_cancel_active_task()`
+   protects against double-cancel if the helper is itself interrupted. `asyncio.shield(task)` in
+   `_run_ai_pipeline` prevents the `AI_TIMEOUT_SECS` wait from cancelling the underlying task —
+   the task is then explicitly cancelled via `_cancel_active_task()` in the `TimeoutError` handler.
 
 ---
 
@@ -895,5 +976,5 @@ Run `pytest tests/ --cov=src --cov-report=term-missing`. Target: all branches of
 - [ ] `VERSION` bumped to `0.19.0` before merge PR to `main`.
 - [ ] Feature works on both **Telegram** and **Slack**.
 - [ ] Feature works with all backends (`copilot`, `codex`, `api`).
-- [ ] Edge cases 1–7 above are resolved and either handled in code or documented as accepted trade-offs.
+- [ ] Edge cases 1–8 above are resolved and either handled in code or documented as accepted trade-offs.
 - [ ] PR is merged to `develop` first; CI is green; then merged to `main`.
