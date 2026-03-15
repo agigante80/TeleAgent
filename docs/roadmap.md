@@ -34,6 +34,7 @@ If adding a new item, create a feature document using `docs/features/_template.m
 | 2.13 | Lightweight web dashboard — read-only HTTP status page in the container | [→ features/web-dashboard.md](features/web-dashboard.md) |
 | 2.14 | Prometheus metrics endpoint — expose request/error/latency metrics via `/metrics` | [→ features/metrics-endpoint.md](features/metrics-endpoint.md) |
 | 2.15 | Multi-provider git hosting — GitLab, Bitbucket, Azure DevOps (`REPO_PROVIDER`) | [→ features/multi-provider-git-hosting.md](features/multi-provider-git-hosting.md) |
+| 2.16 | Modular plugin architecture — registry-based subsystems for fork cherry-picking (pre-work for forks) | [→ features/modular-plugin-architecture.md](features/modular-plugin-architecture.md) |
 
 ---
 

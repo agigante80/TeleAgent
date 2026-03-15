@@ -88,6 +88,24 @@ All three agents always participate in every round regardless of who started it.
 - No implementation steps will introduce regressions in existing tests
 - Version bump classification is correct
 
+#### Modularity Checklist (GateCode)
+
+After Milestone 2.16 (modular plugin architecture) lands, every feature touching a core
+subsystem must verify the following before a ≥ 9 score can be awarded:
+
+- [ ] **New AI backends**: registered via `@backend_registry.register(key)` — `factory.py` not edited directly
+- [ ] **New platforms**: registered via `@platform_registry.register(key)` — `main.py` not edited directly
+- [ ] **New storage/audit backends**: registered via `@storage_registry` / `@audit_registry` — no `main.py` edits
+- [ ] **New commands**: annotated with `@register_command(...)` — dispatch tables not edited by hand in `bot.py` or `slack.py`
+- [ ] **New secret-bearing config fields**: added to the sub-config's `secret_values()` — `redact.py` `_collect_secrets` not edited
+- [ ] **New service dependencies**: added to `Services` dataclass or an existing service class — not imported directly at module level in adapters
+- [ ] **New dep detectors**: registered via `runtime.register_detector()` — `_DETECTORS` list not edited directly
+- [ ] **Fork isolation confirmed**: deleting this feature's module file(s) does not cause an `ImportError` when the feature is not selected via env vars
+
+> _Before Milestone 2.16 lands, note in the review whether the feature would need a
+> `factory.py` / `main.py` / `dispatch-dict` edit — flag it as future-modularity-debt
+> but do not block approval on it._
+
 ### GateSec (sec) — Security & Safety
 - No new secret/token is stored in plaintext without `SecretRedactor` coverage
 - New env vars holding credentials go in the right sub-config with `Field(env=…)`
