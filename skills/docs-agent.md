@@ -144,7 +144,41 @@ Synchronises `docs/features/` and `docs/roadmap.md` so both reflect the same gro
 
 ### `docs align-sync`
 
-*(To be defined — placeholder for cross-checking feature specs against actual `src/config.py` env vars and file references.)*
+**When to run:** whenever any of `README.md`, `.env.example`, `docker-compose.yml.example`, or `src/config.py` changes — or when a self-hoster reports a missing/stale env var.
+
+**Trigger conditions:**
+- A new config field is added to `src/config.py` but not yet documented in `README.md`
+- `README.md` is duplicated (two `## License` sections)
+- `.env.example` references a var that no longer exists in `src/config.py`
+- `docker-compose.yml.example` has a `VAR=` assignment that is unrecognised
+
+**Steps:**
+
+1. **Fix README.md duplication** — if `README.md` contains two `## License` sections, it is duplicated. Keep the first copy (it is the most complete); delete everything after the first `MIT` line. Verify `wc -l README.md` is ≤ 400.
+
+2. **Refresh README.md Features section** — compare the bullet list against active roadmap items in `docs/roadmap.md`. Add any shipped features that are missing; remove any that were never implemented.
+
+3. **Refresh README.md env var table** — scan `src/config.py` for all field definitions. For each var, confirm a row exists in `README.md` with its default value and a one-liner description. Add missing rows; update stale defaults. `README.md` is the *only* file that must list all vars.
+
+4. **Audit `.env.example`** — run `python scripts/lint_docs.py`. Any `[ENV EXAMPLE STALE]` error means a var in `.env.example` no longer exists in `src/config.py`. Either remove the var or add a passthrough marker (see below). Keep only the vars a self-hoster must configure; minor tunables (`STREAM_THROTTLE_SECS`, `HISTORY_TURNS`, etc.) are intentionally absent.
+
+5. **Audit `docker-compose.yml.example`** — any `[COMPOSE STALE]` error means a `VAR=` assignment in a non-comment line of the compose file is unrecognised. Either remove it or add a passthrough marker to `.env.example`.
+
+6. **Add passthrough markers** — for vars intentionally absent from `src/config.py` (e.g. Docker Compose-only vars, CLI subprocess tokens), add an inline comment in `.env.example`:
+   ```bash
+   COPILOT_GITHUB_TOKEN=github_pat_xxxx   # passthrough: forwarded to copilot CLI subprocess
+   # REPO_HOST_PATH=/host/path            # passthrough: Docker Compose bind-mount only
+   ```
+   The lint script recognises `# passthrough:` and will not flag these as stale.
+
+7. **Commit** with message: `docs(align-sync): sync README, .env.example, docker-compose.yml.example`
+
+**Expected output:** `python scripts/lint_docs.py` exits 0 with the message:
+```
+✓  docs lint passed — N specs checked, roadmap consistent, README config coverage complete.
+```
+
+**Passthrough guidance:** a passthrough var is one that appears in `.env.example` or `docker-compose.yml.example` but is NOT declared in `src/config.py` — it is passed directly to a subprocess or Docker runtime. Mark it with `# passthrough: <reason>` on the same line. If a var has this marker but *is* actually in `src/config.py`, the lint script treats it as declared (stale detection is preserved).
 
 ---
 
