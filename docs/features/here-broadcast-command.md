@@ -17,8 +17,8 @@ Treat `@here`, `@channel`, and `@everyone` Slack mentions as broadcast prefix al
 | GateSec  | 1     | 9/10  | 2026-03-15 | All code refs verified; auth-before-broadcast correct; added trusted-bot broadcast edge case (F1) |
 | GateDocs | 1     | 9/10  | 2026-03-15 | Created retroactive spec; problem statement, edge cases, and ACs all measurable; Slack-only scope clearly stated |
 
-**Status**: ⏳ Pending GateDocs R1
-**Approved**: No — requires all scores ≥ 9/10 in the same round
+**Status**: ✅ Approved — R1 (GateCode 9/10, GateSec 9/10, GateDocs 9/10)
+**Approved**: Yes — 2026-03-15
 
 ---
 
@@ -340,6 +340,28 @@ All 10 spec claims verified against `src/platform/slack.py` at commit `c3fdae9`.
 
 ---
 
+## GateDocs R1 Findings
+
+> Round 1 docs review — 2026-03-15
+
+This file was created as a retroactive spec matching the already-implemented broadcast block (`src/platform/slack.py:686–708`). GateCode R1 corrected function/test-file references and flagged 4 missing tests. GateSec R1 added the trusted-bot broadcast edge case (§9) and the full security checklist.
+
+| ID | Severity | Finding | Status |
+|----|----------|---------|--------|
+| F1 | 🟡 Blocking | `docs/roadmap.md` AC inconsistency — GateCode marked `[x]` for the roadmap entry but no entry existed. Lint policy (`lint_docs.py`) requires Implemented specs to be *absent* from the roadmap (enforced by `roadmap-sync`). AC reworded to reflect actual policy; checkbox set to `[x]` with clarifying note. | Resolved inline |
+
+**Docs checklist:**
+
+- ✅ Problem statement covers all three user-facing pain points
+- ✅ Edge cases section — 9 resolved items, all concrete and implementation-verified
+- ✅ Acceptance criteria — all measurable; partial AC flagged with `[~]` and gap detail
+- ✅ Design Space — both axes documented with pros/cons and explicit recommendations
+- ✅ Test Plan — actual test names verified; 4 missing tests explicitly listed
+- ✅ `docs/roadmap.md` — Implemented specs are removed by `roadmap-sync` per lint policy; no entry needed (AC corrected below)
+- ✅ Scope boundary (Slack-only) stated in ≥ 3 places
+
+---
+
 ## Acceptance Criteria
 
 > The feature is *done* when ALL of the following are true.
@@ -351,7 +373,7 @@ All 10 spec claims verified against `src/platform/slack.py` at commit `c3fdae9`.
 - [x] `thread_ts` is preserved in all broadcast routing paths.
 - [x] `pytest tests/ -v --tb=short` passes with no failures.
 - [x] `ruff check src/` reports no new linting issues.
-- [x] `docs/roadmap.md` entry is present and marked ✅ on merge to `main`.
-- [x] `docs/features/here-broadcast-command.md` status changed to `Implemented` on merge to `main`.
+- [x] `docs/roadmap.md` — Implemented specs are absent from the roadmap (removed by `roadmap-sync` per lint policy; no manual entry required).
+- [x] `docs/features/here-broadcast-command.md` status is `Implemented` (already set; marked ✅ on merge to `main` per convention).
 - [~] Core broadcast unit tests present and passing in `tests/unit/test_slack_bot.py` (7/11 scenarios covered — 4 missing: whitespace-only, PREFIX_ONLY bypass, thread_ts, multiple mentions). _(open — add missing 4 tests before closing feature)_
 - [ ] `README.md` Slack section updated with broadcast tip _(optional, team discretion)_.
