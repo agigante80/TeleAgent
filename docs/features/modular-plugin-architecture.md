@@ -29,7 +29,7 @@ begins implementation.
 | GateDocs | 3     | 8/10  | 2026-03-15 | GateCode R3 verified ✅. 2 stale wording gaps fixed: (1) Step 5b extraction note read "must be extracted" — GateCode R3 already completed the extraction to `src/_loader.py`; updated to past tense; (2) OQ17 still listed `src/registry.py` as an alternative — settled to `src/_loader.py` to match Files table and code samples. Spec is implementation-ready: all blockers resolved, all OQs documented. |
 
 | GateCode | 4     | 9/10  | 2026-03-15 | 3 gaps fixed: (1) `RuntimeService` design/impl mismatch — dropped from `Services` dataclass in Design Space; added note that dep detection runs at startup, not via handlers; (2) version bump stale (`0.19.0`) — updated to `0.21.0` / dynamic derivation note; (3) `test_all_sub_configs_implement_secret_provider` referenced in OQ13 text but missing from Test Plan — added to `tests/unit/test_config.py` additions table. |
-| GateSec  | 4     | -/10  | -          | Pending |
+| GateSec  | 4     | 9/10  | 2026-03-15 | All R1/R2 findings resolved; GateCode R4 fixes verified (RuntimeService dropped, OQ13 CI test added); no new security gaps |
 | GateDocs | 4     | -/10  | -          | Pending |
 
 **Status**: ⏳ In review — round 4
@@ -1317,6 +1317,29 @@ the `VERSION` file at merge time, not from a hardcoded target here.)_
     raises `ValueError` if `name` is already present. Consistent with `Registry.register()`
     (which raises on duplicate keys per OQ9). Tests `test_register_command_duplicate_name_raises`
     added to `tests/unit/test_command_registry.py`.
+
+### GateSec R4 Findings
+
+*Score: 9/10* — All 10 R1/R2 security findings (OQ9–OQ18) remain resolved. GateCode R4
+fixes verified; no new security concerns.
+
+- ✅ *OQ9 (registry hijack)* — `ValueError` default + `force=True` override path. Sound.
+- ✅ *OQ10 (token exposure)* — `field(repr=False)` mitigates logging vectors. Accepted as LOW residual risk.
+- ✅ *OQ11 (NullRepoService)* — standalone class, no `token` attribute. Sound.
+- ✅ *OQ12 (InMemoryStorage)* — bounded at `max_entries_per_chat=200`. Sound.
+- ✅ *OQ13 (SecretProvider opt-in)* — GateCode R4 added `test_all_sub_configs_implement_secret_provider` to the Test Plan (`tests/unit/test_config.py`). CI now enforces the contract. Residual gap (forks skipping CI) accepted as LOW.
+- ✅ *OQ14–OQ16* — detector logging, `find_spec` pattern, hardcoded module lists. All verified.
+- ✅ *OQ17–OQ18* — platform import consistency and COMMANDS uniqueness. Both resolved.
+
+*GateCode R4 changes — security impact:*
+1. `RuntimeService` dropped from `Services` — reduces attack surface (fewer service-layer wrappers). ✅ Positive.
+2. Version bump `0.21.0` + dynamic derivation — no security impact.
+3. OQ13 test in Test Plan — strengthens CI enforcement of `SecretProvider` contract. ✅ Positive.
+
+*No new attack surface.* Auth guards preserved, no new endpoints, no user input paths added,
+`_collect_secrets` rewrite uses `model_fields` (Pydantic v2 idiomatic), hardcoded module
+lists prevent planted-file attacks.
+
 ---
 
 ## Acceptance Criteria
