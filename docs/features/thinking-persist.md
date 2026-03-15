@@ -14,7 +14,7 @@ Fix the non-streaming message lifecycle so the "⏳ Still thinking…" placehold
 | Reviewer | Round | Score | Date | Notes |
 |----------|-------|-------|------|-------|
 | GateCode | 1 | 9/10 | 2026-03-15 | Fixed config.py line ref, added README.md to Files table (required), corrected version caveat |
-| GateSec  | 1 | -/10 | - | Pending |
+| GateSec  | 1 | 9/10 | 2026-03-15 | No new attack surface; redaction contracts preserved; minor naming nit fixed inline |
 | GateDocs | 1 | -/10 | - | Pending |
 
 **Status**: ⏳ Pending review
@@ -96,13 +96,13 @@ await self._deliver_slack(
 )
 
 # After:
-persist = (
+thinking_persists = (
     not self._settings.slack.slack_delete_thinking
     and self._settings.bot.thinking_show_elapsed
 )
 await self._deliver_slack(
     client, channel,
-    None if self._settings.slack.slack_delete_thinking or persist else ts,
+    None if self._settings.slack.slack_delete_thinking or thinking_persists else ts,
     response, thread_ts,
 )
 ```
@@ -222,6 +222,48 @@ User sends prompt
 - **Rate limits** — persisting the thinking message means one extra message per prompt in non-streaming mode. Telegram allows 30 messages/second per bot (well within limits). Slack's rate limit (chat.postMessage: ~1/sec) is also fine since the response message only fires once.
 - **`_deliver_telegram` with `streaming_msg=None`** — already handles `None` correctly: creates a new `reply_text()` instead of editing. No changes needed to the delivery function itself.
 - **`_deliver_slack` with `existing_ts=None`** — already handles `None` correctly: creates a new `_reply()` instead of editing. No changes needed to the delivery function itself.
+
+---
+
+## GateSec R1 Findings
+
+> Security review — 2026-03-15
+
+### Finding 1 — 🟢 No new attack surface
+
+This change modifies only the internal message-delivery plumbing (which argument is passed to `_deliver_telegram` / `_deliver_slack`). No new handlers, commands, endpoints, env vars, or user-input paths are introduced. No user-controlled data influences the new branching logic — the condition depends solely on operator-set config booleans (`THINKING_SHOW_ELAPSED`, `SLACK_DELETE_THINKING`).
+
+*No action needed.*
+
+### Finding 2 — 🟢 Redaction integrity preserved
+
+- **Telegram path**: `response` is passed through `self._redactor.redact(response)` at `bot.py:371` _before_ `_deliver_telegram` is called. This contract is unchanged — the new `None` vs `msg` branching does not affect what text is delivered, only _where_ it goes (new message vs edit).
+- **Slack path**: `_reply()` and `_edit()` both apply `self._redactor.redact(text)` internally (lines 208, 216). The `_deliver_slack` multi-block and file-upload paths also redact internally (lines 359, 395). Passing `None` as `existing_ts` routes through `_reply()`, which redacts. No gap.
+
+*No action needed.*
+
+### Finding 3 — 🟢 Auth guards unaffected
+
+No command handlers are added or modified. The change is inside `forward_to_ai` (Telegram, already inside `@_requires_auth`) and `_handle_message` (Slack, already past `_is_allowed()` gate). No auth bypass possible.
+
+*No action needed.*
+
+### Finding 4 — 🟡 Variable name inconsistency (fixed inline)
+
+Design Space Option A used `persist` as the variable name; Implementation Steps used `thinking_persists`. Standardised to `thinking_persists` in both locations to prevent copy-paste confusion during implementation.
+
+*Fixed inline — no follow-up needed.*
+
+### Summary
+
+| # | Finding | Risk | Action |
+|---|---------|------|--------|
+| 1 | No new attack surface | 🟢 None | — |
+| 2 | Redaction integrity preserved | 🟢 None | — |
+| 3 | Auth guards unaffected | 🟢 None | — |
+| 4 | Variable name inconsistency | 🟡 Cosmetic | Fixed inline |
+
+*Overall: 9/10* — Clean security profile. No secrets, no user input, no subprocess changes, no auth modifications. The only edit was a cosmetic naming consistency fix.
 
 ---
 
