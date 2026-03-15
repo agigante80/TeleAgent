@@ -157,8 +157,13 @@ When it is your turn:
    your review than before.
 4. **Update your row in the Team Review table** — see format below.
 5. **Commit to `develop`** — commit message: `docs: [dev|sec|docs] review round N — <feature>`
+   > ⚠️ _This step is mandatory before proceeding. All findings, inline edits, and your
+   > Team Review row **must be committed and pushed** to `develop` before you delegate or
+   > post your outcome. Never delegate without a pushed commit — the next agent syncs via
+   > `git pull --rebase` and will miss your changes if the commit hasn't landed._
 6. **Delegate to the next agent** — append a `[DELEGATE: …]` block (see below) or, if you
    are the last reviewer in the round, post the outcome.
+   Include the commit SHA from step 5 in your delegation message.
 
 ---
 
