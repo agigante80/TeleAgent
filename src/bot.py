@@ -418,6 +418,15 @@ class _BotHandlers:
         if not cmd:
             await _reply(update, f"Usage: /{self._p}run <shell command>")
             return
+        block_reason = self._services.shell.validate_command(cmd)
+        if block_reason:
+            await _reply(update, block_reason)
+            await self._audit.record(
+                platform="telegram", chat_id=chat_id, user_id=user_id,
+                action="shell_exec", status="blocked",
+                detail={"cmd": self._redactor.redact(cmd), "reason": block_reason},
+            )
+            return
         needs_confirm = (
             self._confirm_destructive
             and self._services.shell.is_destructive(cmd)
@@ -711,6 +720,15 @@ class _BotHandlers:
             )
             return
         t0 = time.time()
+        block_reason = self._services.shell.validate_command(cmd)
+        if block_reason:
+            await query.edit_message_text(block_reason)
+            await self._audit.record(
+                platform="telegram", chat_id=chat_id, user_id=user_id,
+                action="shell_confirm", status="blocked",
+                detail={"cmd": self._redactor.redact(cmd), "reason": block_reason},
+            )
+            return
         await query.edit_message_text(f"⏳ Running:\n`{cmd}`", parse_mode="Markdown")
         result = await self._services.shell.run(cmd)
         await query.message.reply_text(f"```\n{self._redactor.redact(result)}\n```", parse_mode="Markdown")

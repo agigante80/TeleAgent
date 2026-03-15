@@ -144,6 +144,8 @@ async def test_startup_calls_slack_branch():
     settings.bot = MagicMock(spec=BotConfig)
     settings.bot.max_output_chars = 3000
     settings.bot.allow_secrets = False
+    settings.bot.shell_allowlist = []
+    settings.bot.shell_readonly = False
     storage_cfg = MagicMock(spec=StorageConfig)
     storage_cfg.storage_backend = "sqlite"
     storage_cfg.audit_backend = "sqlite"
@@ -183,6 +185,8 @@ async def test_startup_calls_telegram_branch():
     settings.bot = MagicMock(spec=BotConfig)
     settings.bot.max_output_chars = 3000
     settings.bot.allow_secrets = False
+    settings.bot.shell_allowlist = []
+    settings.bot.shell_readonly = False
     storage_cfg = MagicMock(spec=StorageConfig)
     storage_cfg.storage_backend = "sqlite"
     storage_cfg.audit_backend = "sqlite"

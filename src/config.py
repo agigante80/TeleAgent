@@ -73,6 +73,8 @@ class BotConfig(BaseSettings):
     ai_timeout_warn_secs: int = 60          # Seconds before hard timeout to include a cancellation warning; env: AI_TIMEOUT_WARN_SECS
     thinking_show_elapsed: bool = True      # THINKING_SHOW_ELAPSED: update "🤖 Thinking…" to "🤖 Thought for Xs" after AI responds; final response posted as new message
     allow_secrets: bool = False             # ALLOW_SECRETS=true disables secret redaction in outgoing messages
+    shell_allowlist: list[str] = []         # SHELL_ALLOWLIST: comma-separated permitted command names for `run` (empty = allow all)
+    shell_readonly: bool = False            # SHELL_READONLY=true: only read-only commands permitted in `run`
 
     def secret_values(self) -> list[str]:
         return []

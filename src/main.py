@@ -184,7 +184,12 @@ async def startup(settings: Settings) -> None:
     from src.redact import SecretRedactor
     redactor = SecretRedactor(settings)
     services = Services(
-        shell=ShellService(max_chars=settings.bot.max_output_chars, redactor=redactor),
+        shell=ShellService(
+            max_chars=settings.bot.max_output_chars,
+            redactor=redactor,
+            allowlist=settings.bot.shell_allowlist,
+            readonly=settings.bot.shell_readonly,
+        ),
         repo=RepoService(
             token=settings.github.github_repo_token,
             repo_name=settings.github.github_repo,

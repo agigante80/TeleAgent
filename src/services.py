@@ -14,10 +14,17 @@ class ShellService:
     """Thin wrapper around executor.run_shell with injected configuration."""
     max_chars: int
     redactor: "SecretRedactor"
+    allowlist: list[str] = field(default_factory=list)
+    readonly: bool = False
 
     async def run(self, cmd: str) -> str:
         from src import executor
         return await executor.run_shell(cmd, self.max_chars, self.redactor)
+
+    def validate_command(self, cmd: str) -> str | None:
+        """Return None if *cmd* is permitted, or a block-reason string if it should be rejected."""
+        from src import executor
+        return executor.validate_shell_command(cmd, self.allowlist, self.readonly)
 
     def is_destructive(self, cmd: str) -> bool:
         from src import executor

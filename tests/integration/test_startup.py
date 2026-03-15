@@ -21,6 +21,8 @@ class TestStartup:
         bot.image_tag = ""
         bot.max_output_chars = 3000
         bot.allow_secrets = False
+        bot.shell_allowlist = []
+        bot.shell_readonly = False
         ai = MagicMock(spec=AIConfig)
         ai.ai_cli = "api"
         ai.ai_model = ""

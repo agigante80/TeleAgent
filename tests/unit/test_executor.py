@@ -3,7 +3,10 @@ import os
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from src.executor import is_destructive, truncate_output, summarize_if_long, run_shell, sanitize_git_ref, scrubbed_env, _SECRET_ENV_KEYS
+from src.executor import (
+    is_destructive, truncate_output, summarize_if_long, run_shell,
+    sanitize_git_ref, scrubbed_env, _SECRET_ENV_KEYS, validate_shell_command,
+)
 
 
 class TestSanitizeGitRef:
@@ -192,3 +195,90 @@ class TestScrubbedEnv:
         assert "env" in captured_kwargs, "run_shell must pass env= to create_subprocess_shell"
         for key in _SECRET_ENV_KEYS:
             assert key not in captured_kwargs["env"], f"{key} must not be forwarded by run_shell"
+
+
+class TestValidateShellCommand:
+    """validate_shell_command() — metachar injection, readonly mode, allowlist."""
+
+    # ── 1. Metacharacter bypass vectors (sec-provided list) ──────────────
+
+    @pytest.mark.parametrize("cmd", [
+        "ls; rm -rf /",                   # semicolon
+        "ls && rm -rf /",                 # double-ampersand
+        "ls || evil",                     # double-pipe
+        "ls | cat /etc/passwd",           # single pipe
+        "echo $(cat /etc/passwd)",        # command substitution $()
+        "echo `cat /etc/passwd`",         # backtick substitution
+        "ls\nrm -rf /",                   # embedded newline
+        "ls\rrm -rf /",                   # carriage return
+        "cmd > /etc/cron.daily/evil",     # redirect-out
+        "cmd < /etc/passwd",              # redirect-in
+        "{ malicious; }",                 # brace grouping
+        "ls;cat /etc/shadow",             # semicolon no space
+        "git log --format='%s' $(evil)",  # nested $()
+    ])
+    def test_metachar_blocked(self, cmd):
+        result = validate_shell_command(cmd, allowlist=[], readonly=False)
+        assert result is not None
+        assert "Blocked" in result
+
+    # ── 2. Clean commands pass ───────────────────────────────────────────
+
+    @pytest.mark.parametrize("cmd", [
+        "ls -la",
+        "git status",
+        "git log --oneline -10",
+        "cat README.md",
+        "python3 --version",
+    ])
+    def test_clean_commands_pass(self, cmd):
+        assert validate_shell_command(cmd, allowlist=[], readonly=False) is None
+
+    # ── 3. SHELL_READONLY mode ───────────────────────────────────────────
+
+    def test_readonly_blocks_write_command(self):
+        result = validate_shell_command("rm -rf /tmp/x", allowlist=[], readonly=True)
+        assert result is not None and "Blocked" in result
+
+    def test_readonly_allows_ls(self):
+        assert validate_shell_command("ls -la", allowlist=[], readonly=True) is None
+
+    def test_readonly_allows_git_log(self):
+        assert validate_shell_command("git log --oneline", allowlist=[], readonly=True) is None
+
+    def test_readonly_blocks_git_push(self):
+        result = validate_shell_command("git push origin main", allowlist=[], readonly=True)
+        assert result is not None and "Blocked" in result
+
+    def test_readonly_blocks_git_commit(self):
+        result = validate_shell_command("git commit -m msg", allowlist=[], readonly=True)
+        assert result is not None and "Blocked" in result
+
+    # ── 4. SHELL_ALLOWLIST mode ──────────────────────────────────────────
+
+    def test_allowlist_permits_listed_command(self):
+        assert validate_shell_command("git status", allowlist=["git"], readonly=False) is None
+
+    def test_allowlist_blocks_unlisted_command(self):
+        result = validate_shell_command("curl http://evil.example/", allowlist=["git"], readonly=False)
+        assert result is not None and "Blocked" in result
+
+    def test_allowlist_strips_path_prefix(self):
+        """A full path like /usr/bin/ls should match allowlist entry 'ls'."""
+        assert validate_shell_command("/usr/bin/ls -la", allowlist=["ls"], readonly=False) is None
+
+    def test_empty_cmd_returns_block_when_allowlist_set(self):
+        # empty string: shlex returns [], _first_token returns None → blocked
+        result = validate_shell_command("", allowlist=["git"], readonly=False)
+        # empty command is fine without allowlist, but with allowlist None token → blocked
+        assert result is not None
+
+    def test_metachar_checked_before_allowlist(self):
+        """Metachar must be caught even if the command would otherwise be in the allowlist."""
+        result = validate_shell_command("git status; rm -rf /", allowlist=["git"], readonly=False)
+        assert result is not None and "metachar" in result.lower()
+
+    def test_metachar_checked_before_readonly(self):
+        """Metachar must be caught even in readonly mode."""
+        result = validate_shell_command("ls; evil", allowlist=[], readonly=True)
+        assert result is not None and "metachar" in result.lower()

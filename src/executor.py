@@ -36,6 +36,22 @@ def scrubbed_env() -> dict[str, str]:
     """
     return {k: v for k, v in os.environ.items() if k not in _SECRET_ENV_KEYS}
 
+# Shell metacharacters that enable command injection. Checked before any allowlist/readonly test.
+_SHELL_METACHAR_RE = re.compile(r'[;&|`$<>()\n\r{}]')
+
+# Commands permitted in SHELL_READONLY mode (read-only by nature).
+_READONLY_CMDS: frozenset[str] = frozenset({
+    "cat", "head", "tail", "ls", "ll", "find", "grep", "rg",
+    "wc", "sort", "uniq", "cut", "sed", "awk", "echo", "pwd",
+    "git", "python", "python3", "node",
+})
+
+# git sub-commands permitted in SHELL_READONLY mode.
+_READONLY_GIT_SUBCMDS: frozenset[str] = frozenset({
+    "log", "diff", "status", "show", "blame", "shortlog",
+    "describe", "branch", "tag", "remote", "ls-files", "ls-tree",
+})
+
 _SAFE_GIT_REF = re.compile(r"^[a-zA-Z0-9._\-/~^]+$")
 
 
@@ -44,6 +60,56 @@ def sanitize_git_ref(ref: str) -> str | None:
     if not _SAFE_GIT_REF.match(ref):
         return None
     return shlex.quote(ref)
+
+
+def _first_token(cmd: str) -> str | None:
+    """Return the basename of the first token in *cmd* (shlex-parsed), or ``None`` on parse error."""
+    try:
+        parts = shlex.split(cmd)
+    except ValueError:
+        return None
+    return os.path.basename(parts[0]) if parts else None
+
+
+def validate_shell_command(cmd: str, allowlist: list[str], readonly: bool) -> str | None:
+    """Validate *cmd* before execution.
+
+    Returns ``None`` if the command is permitted, or a human-readable block reason string
+    if it should be rejected. Checks are applied in this order:
+
+    1. Shell metacharacter injection (``;``, ``|``, ``&&``, ``$()``, backticks, etc.) — always.
+    2. ``SHELL_READONLY`` mode — only a curated set of read-only commands is allowed.
+    3. ``SHELL_ALLOWLIST`` — the first token's basename must be in the allowlist.
+    """
+    # 1. Metacharacter check — must come first so allowlist/readonly cannot be bypassed.
+    if _SHELL_METACHAR_RE.search(cmd):
+        return "🚫 Blocked: shell metacharacters are not permitted in `run` commands."
+
+    # 2. SHELL_READONLY mode.
+    if readonly:
+        token = _first_token(cmd)
+        if token is None:
+            return "🚫 Blocked: unable to parse command."
+        if token not in _READONLY_CMDS:
+            return f"🚫 Blocked: `{token}` is not permitted in read-only mode."
+        if token == "git":
+            try:
+                parts = shlex.split(cmd)
+            except ValueError:
+                return "🚫 Blocked: unable to parse git sub-command."
+            subcmd = parts[1] if len(parts) > 1 else ""
+            if subcmd not in _READONLY_GIT_SUBCMDS:
+                return f"🚫 Blocked: `git {subcmd}` is not permitted in read-only mode."
+
+    # 3. SHELL_ALLOWLIST check.
+    if allowlist:
+        token = _first_token(cmd)
+        if token is None:
+            return "🚫 Blocked: unable to parse command."
+        if token not in allowlist:
+            return f"🚫 Blocked: `{token}` is not in the permitted command list."
+
+    return None
 
 
 

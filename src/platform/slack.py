@@ -780,6 +780,15 @@ class SlackBot:
         if not cmd:
             await self._reply(client, channel, f"Usage: `{self._p} run <shell command>`", thread_ts)
             return
+        block_reason = self._services.shell.validate_command(cmd)
+        if block_reason:
+            await self._reply(client, channel, block_reason, thread_ts)
+            await self._audit.record(
+                platform="slack", chat_id=channel, user_id=user_id,
+                action="shell_exec", status="blocked",
+                detail={"cmd": self._redactor.redact(cmd), "reason": block_reason},
+            )
+            return
         needs_confirm = (
             self._confirm_destructive
             and self._services.shell.is_destructive(cmd)
@@ -1050,6 +1059,15 @@ class SlackBot:
             )
             return
         t0 = time.time()
+        block_reason = self._services.shell.validate_command(cmd)
+        if block_reason:
+            await client.chat_update(channel=channel, ts=ts, text=block_reason, blocks=[])
+            await self._audit.record(
+                platform="slack", chat_id=channel, user_id=user_id,
+                action="shell_confirm", status="blocked",
+                detail={"cmd": self._redactor.redact(cmd), "reason": block_reason},
+            )
+            return
         await client.chat_update(
             channel=channel, ts=ts, text=f"⏳ Running:\n```{cmd}```", blocks=[]
         )
