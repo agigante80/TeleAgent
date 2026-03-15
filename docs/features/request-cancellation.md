@@ -18,9 +18,26 @@ Block Kit "Cancel" button interrupt the running pipeline cleanly and notify the 
 | GateCode | 1 | 6/10 | 2026-03-15 | 6 blockers/gaps — see R1 findings below |
 | GateCode | 2 | 7/10 | 2026-03-15 | 2 blockers, 3 gaps — addressed by GateDocs |
 | GateSec  | 1 | 7/10 | 2026-03-15 | 5 findings (1 blocker, 3 medium, 1 low) — see GateSec R1 below |
-| GateDocs | 1 | -/10 | - | Pending |
+| GateDocs | 1 | 9/10 | 2026-03-15 | Applied 4 inline fixes (test files table, AC slash-command wording, redundant contract test, modularity-debt note); doc is implementation-ready from docs perspective |
+| GateCode | 2 | -/10 | - | Pending |
+| GateSec  | 2 | -/10 | - | Pending |
+| GateDocs | 2 | -/10 | - | Pending |
 
-**Status**: ⏳ In review — GateSec R1 complete; awaiting GateDocs R1
+**Status**: ⏳ Round 1 complete — GateCode 7/10, GateSec 7/10, GateDocs 9/10; scores below gate; proceeding to round 2
+
+### Round 1 Blocking Gaps (for Round 2 addressal)
+
+> Listed here for GateCode to work through in round 2. Do not list exploit-ready details in delegation messages — reference this section by name only.
+
+1. **`backend.close()` race with new requests** _(GateSec R1 Finding 1)_ — `_cancel_active_task()` Step 2b includes a guard (`if current is None or current is task`) but the Architecture Note still says `close()` fires "unconditionally" in the summary. Ensure the guard is explicit in both the code sample and the prose description, and verify the race remediation is complete (check if the guard covers the `clear_history()` call too).
+
+2. **`clear_history()` is chat-agnostic** _(GateSec R1 Finding 2)_ — The Architecture Note documents the trade-off but does not recommend a concrete stance: "user must run `gate clear` manually" or "call `clear_history()` unconditionally." The implementation step (Step 2b) calls `clear_history()` inside the guard, which differs from the documented trade-off. Resolve to one clear recommendation and align Step 2b + Architecture Notes.
+
+3. **Audit `user_id=None` follow-up tracking** _(GateSec R1 Finding 3)_ — The docstring in `_handle_cancel` notes the gap and mentions a follow-up to thread `user_id` through `_dispatch()`. No acceptance criterion or open-question/issue reference tracks this. Either add an acceptance criterion "follow-up ticket created" or explicitly close this as out-of-scope with a rationale.
+
+4. **`AI_TIMEOUT_SECS=0` hard ceiling** _(GateSec R1 Finding 4)_ — Architecture Note recommends `AI_TIMEOUT_SECS > 0` but stops short of a hard ceiling. Consider whether the spec should mandate a fallback ceiling (e.g. 30 min) even when `AI_TIMEOUT_SECS=0`, or formally accept indefinite blocking as a known risk for single-operator deployments.
+
+5. **`backend.close()` semantic / re-entrance contract** _(GateSec R1 Finding 5)_ — The Architecture Note asks future backend authors to ensure `close()` is re-entrant. This should also appear in the ABC docstring update (Files table). Add an explicit Files table row for `src/ai/adapter.py` — update `AICLIBackend.close()` docstring to state the re-entrance requirement.
 
 ### GateCode R2 Findings (2026-03-15)
 
@@ -483,6 +500,11 @@ User sends "gate cancel" (or clicks Slack Cancel button)
   (`_run_ai_pipeline`): wrap the streaming coroutine in `asyncio.create_task()`, store in
   `_active_tasks[chat_id]`, and handle `CancelledError` / `TimeoutError` at the pipeline level.
   The streaming helper functions themselves do not change.
+- **Future modularity debt** _(pre-Milestone 2.16)_ — This feature adds `"cancel"` to the
+  `_dispatch` table in `slack.py` and the prefix dispatch dict in `bot.py` by direct dict
+  mutation. After Milestone 2.16 (modular plugin architecture), new commands should use
+  `@register_command(...)` instead of editing dispatch tables by hand. Flagged as
+  future-modularity-debt; does not block this feature.
 
 ---
 
@@ -870,6 +892,8 @@ argument must be threaded through so replies land in the correct thread. The in-
 | `src/bot.py` | **Edit** | Add `_active_tasks` dict, `_cancel_active_task()`, `cmd_cancel`, in-flight guard in `_run_ai_pipeline`, `CancelledError` handling, dispatch registration, `CommandHandler` in `build_app()` |
 | `src/platform/slack.py` | **Edit** | Mirror all of the above; add `"cancel"` to `_KNOWN_SUBS` (routing gate); add `_THINKING_BLOCKS` with Cancel button; add `_on_cancel_ai` handler; add `_handle_cancel` text-command handler; register `cancel_ai` action |
 | `README.md` | **Edit** | Feature bullet, `CANCEL_TIMEOUT_SECS` env var row, `gate cancel` command row |
+| `tests/unit/test_cancel.py` | **Create** | New unit tests for `_cancel_active_task`, `cmd_cancel`, in-flight guard (see Test Plan) |
+| `tests/unit/test_cancel_streaming.py` | **Create** | New unit tests for streaming path cancel and in-flight guard (see Test Plan) |
 | `docs/features/request-cancellation.md` | **Edit** | Mark `Implemented` on merge |
 | `docs/roadmap.md` | **Edit** | Mark done on merge |
 
@@ -927,7 +951,7 @@ argument must be threaded through so replies land in the correct thread. The in-
 
 | Test | What it checks |
 |------|----------------|
-| `test_close_is_callable_on_all_backends` | All backends expose a `close()` method (existing contract, already true) |
+| `test_cancel_calls_backend_close` | `backend.close()` is invoked after cancellation for every backend, confirming the contract that `close()` must be re-entrant and leave the backend usable. Replaces the redundant `test_close_is_callable_on_all_backends` (which the ABC's default no-op already guarantees). |
 
 ### Coverage note
 
@@ -1033,7 +1057,7 @@ Run `pytest tests/ --cov=src --cov-report=term-missing`. Target: all branches of
 - [ ] All implementation steps above are complete.
 - [ ] `pytest tests/ -v --tb=short` passes with no failures or errors.
 - [ ] `ruff check src/` reports no new linting issues.
-- [ ] `gate cancel` works on Telegram (`/cancel` command + `gate cancel` prefix).
+- [ ] `gate cancel` works on Telegram (`/gatecancel` slash command + `gate cancel` prefix — registered via `CommandHandler(f"{p}cancel", h.cmd_cancel)` where `p` defaults to `gate`).
 - [ ] `gate cancel` works on Slack (text command + Block Kit "Cancel" button in "Thinking…" message).
 - [ ] In-flight guard: second prompt while one is in-progress returns "request in progress" message.
 - [ ] `CancelledError` in `_run_ai_pipeline` (streaming and non-streaming) produces "⚠️ Request cancelled." to the user — not a stack trace or silent failure.
