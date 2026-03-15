@@ -16,10 +16,69 @@ Block Kit "Cancel" button interrupt the running pipeline cleanly and notify the 
 | Reviewer | Round | Score | Date | Notes |
 |----------|-------|-------|------|-------|
 | GateCode | 1 | 6/10 | 2026-03-15 | 6 blockers/gaps — see R1 findings below |
+| GateCode | 2 | 7/10 | 2026-03-15 | 2 blockers, 3 gaps — see R2 findings below |
 | GateSec  | 1 | -/10 | - | Pending |
 | GateDocs | 1 | -/10 | - | Pending |
 
-**Status**: ⏳ In review — GateCode R1 findings must be addressed before GateSec/GateDocs rounds
+**Status**: ⏳ In review — GateCode R2 findings must be addressed before GateSec/GateDocs rounds
+
+### GateCode R2 Findings (2026-03-15)
+
+**Score: 7/10** — All R1 blockers cleanly resolved. Two new blockers and three gaps uncovered by codebase cross-check against the actual `_dispatch` calling convention and `build_app` registration pattern.
+
+#### 🔴 Blocker 1 — `_handle_cancel` has the wrong parameter signature
+
+The spec defines `_handle_cancel(self, say, client, args, channel, thread_ts, user_id)` (Step 3h, line 584). But the actual `_dispatch()` mechanism in `slack.py:635–665` calls every handler as:
+
+```python
+await handler(args, say, client, channel, thread_ts=thread_ts)
+```
+
+The correct signature must match this convention exactly:
+
+```python
+async def _handle_cancel(
+    self, args: list[str], say, client, channel: str, *, thread_ts: str | None = None
+) -> None:
+```
+
+There is no `user_id` parameter in the dispatch call — it is not available here. The audit call `user_id=user_id` in the spec's code sample will raise a `NameError` at runtime. Remove `user_id` from the signature and omit it from the `audit.record()` call (pass `user_id=None` or omit the field), or extract it via a different mechanism if needed.
+
+#### 🔴 Blocker 2 — `cmd_cancel` not registered in `build_app` (Telegram slash command broken)
+
+Step 2e adds `"cancel": self.cmd_cancel` to the `cmd_ta` dispatch table — this covers the `gate cancel` prefix form. But the Acceptance Criteria says "`gate cancel` works on Telegram (`/cancel` command + `gate cancel` prefix)."
+
+Looking at `build_app` (lines 672–684), every other utility command has a dedicated `CommandHandler` registration:
+
+```python
+app.add_handler(CommandHandler(f"{p}clear", h.cmd_clear))   # /gateclear
+app.add_handler(CommandHandler(f"{p}sync",  h.cmd_sync))    # /gatesync
+# etc.
+```
+
+Step 2e never adds `app.add_handler(CommandHandler(f"{p}cancel", h.cmd_cancel))`. Without this, `/gatecancel` (the Telegram slash command form) is silently forwarded to `forward_to_ai` as plain text instead of invoking `cmd_cancel`. The Files table lists `src/bot.py` but the `build_app` registration step is missing from the implementation instructions.
+
+#### 🟡 Gap 3 — `asyncio.shield(task)` inside `_cancel_active_task` is semantically confusing
+
+Step 2b's `_cancel_active_task()` does:
+
+```python
+task.cancel()
+with suppress(asyncio.CancelledError, Exception):
+    await asyncio.wait_for(asyncio.shield(task), timeout=...)
+```
+
+After `task.cancel()`, using `asyncio.shield(task)` in the wait is misleading — the intent is "wait for the task to finish (whether via CancelledError or normally)." Shield is used to protect a task from *cancellation propagation*, but here the task is already cancelled. A plain `await asyncio.wait_for(task, timeout=...)` achieves the same result with clearer intent. The only edge case where shield matters here is if `_cancel_active_task` itself gets cancelled while waiting — the shield prevents the inner task from being double-cancelled. If that protection is intentional, add a one-line comment explaining it; otherwise simplify to `await asyncio.wait_for(task, timeout=...)`.
+
+#### 🟡 Gap 4 — Step 4b has no code sample (Slack streaming path)
+
+Step 4b says "mirror the same pattern" for the Slack streaming branch without any code. Step 4a (Telegram) has a complete, reviewable code block. Slack's streaming path has meaningful differences — `self._stream_to_slack(...)` is a method (not a module-level function), the reply mechanism uses `client.chat_update`, and thread_ts must be threaded through. "Mirror" is insufficient for a path described as complex.
+
+#### 🟡 Gap 5 — Double notification on user-initiated cancel (undocumented UX behaviour)
+
+When `cmd_cancel` → `_cancel_active_task()` cancels a task, the pipeline's `except asyncio.CancelledError` block fires and edits the "Thinking…" placeholder to "⚠️ Request cancelled." Simultaneously, `cmd_cancel` sends its own `reply_text("⚠️ Request cancelled.")`. The user sees two notifications: the placeholder is edited and a new reply appears. This is not wrong, but it is intentional UX behaviour that should be documented. Add an Architecture Note or Edge Case entry clarifying: "the pipeline's `CancelledError` handler edits the thinking placeholder in-place; `cmd_cancel` sends a separate reply confirming receipt. Both are expected."
+
+---
 
 ### GateCode R1 Findings (2026-03-15)
 
