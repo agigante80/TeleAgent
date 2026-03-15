@@ -57,7 +57,7 @@ class TestStartup:
              patch("src.repo.configure_git_auth", AsyncMock()), \
              patch("src.runtime.install_deps", mock_install), \
              patch("src.registry.storage_registry.create", return_value=mock_storage), \
-             patch("src.registry.audit_registry.create", return_value=MagicMock(init=AsyncMock())), \
+             patch("src.registry.audit_registry.create", return_value=MagicMock(init=AsyncMock(), verify=AsyncMock(return_value=True))), \
              patch("src.main.create_backend", return_value=mock_backend), \
              patch("src.main._load_platforms"), \
              patch("src.registry.platform_registry.create", return_value=mock_adapter):
