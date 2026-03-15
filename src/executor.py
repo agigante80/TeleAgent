@@ -39,11 +39,16 @@ def scrubbed_env() -> dict[str, str]:
 # Shell metacharacters that enable command injection. Checked before any allowlist/readonly test.
 _SHELL_METACHAR_RE = re.compile(r'[;&|`$<>()\n\r{}]')
 
-# Commands permitted in SHELL_READONLY mode (read-only by nature).
+# Commands permitted in SHELL_READONLY mode.
+# Interpreters (python, python3, node) and awk are intentionally excluded:
+# they can execute arbitrary code or write files without shell metacharacters
+# (e.g. `python3 script.py`, `awk '{system("rm -rf /")}' f`).
+# Operators who need them can add them explicitly via SHELL_ALLOWLIST.
+# `sed` is included but sub-command gating below blocks the `-i` (in-place write) flag.
 _READONLY_CMDS: frozenset[str] = frozenset({
     "cat", "head", "tail", "ls", "ll", "find", "grep", "rg",
-    "wc", "sort", "uniq", "cut", "sed", "awk", "echo", "pwd",
-    "git", "python", "python3", "node",
+    "wc", "sort", "uniq", "cut", "sed", "echo", "pwd",
+    "git",
 })
 
 # git sub-commands permitted in SHELL_READONLY mode.
@@ -100,6 +105,17 @@ def validate_shell_command(cmd: str, allowlist: list[str], readonly: bool) -> st
             subcmd = parts[1] if len(parts) > 1 else ""
             if subcmd not in _READONLY_GIT_SUBCMDS:
                 return f"🚫 Blocked: `git {subcmd}` is not permitted in read-only mode."
+        if token == "sed":
+            # Block in-place writes: -i, -i.bak, and short-flag bundles containing 'i' (-ni, etc.)
+            try:
+                parts = shlex.split(cmd)
+            except ValueError:
+                return "🚫 Blocked: unable to parse sed arguments."
+            for arg in parts[1:]:
+                if arg.startswith("--"):
+                    continue
+                if arg.startswith("-") and "i" in arg[1:]:
+                    return "🚫 Blocked: `sed -i` (in-place write) is not permitted in read-only mode."
 
     # 3. SHELL_ALLOWLIST check.
     if allowlist:

@@ -282,3 +282,41 @@ class TestValidateShellCommand:
         """Metachar must be caught even in readonly mode."""
         result = validate_shell_command("ls; evil", allowlist=[], readonly=True)
         assert result is not None and "metachar" in result.lower()
+
+    # ── 5. sed -i gating in SHELL_READONLY mode ──────────────────────────
+
+    def test_sed_read_allowed_in_readonly(self):
+        """Plain sed without -i is read-only and must be permitted."""
+        assert validate_shell_command("sed 's/foo/bar/' file.txt", allowlist=[], readonly=True) is None
+
+    def test_sed_i_blocked_in_readonly(self):
+        """`sed -i` must be blocked in readonly mode (in-place write)."""
+        result = validate_shell_command("sed -i 's/x/y/' file.txt", allowlist=[], readonly=True)
+        assert result is not None and "Blocked" in result and "sed -i" in result
+
+    def test_sed_i_backup_blocked_in_readonly(self):
+        """`sed -i.bak` (BSD-style in-place with backup) must also be blocked."""
+        result = validate_shell_command("sed -i.bak 's/x/y/' file.txt", allowlist=[], readonly=True)
+        assert result is not None and "Blocked" in result
+
+    def test_sed_ni_blocked_in_readonly(self):
+        """Short-flag bundle `-ni` still performs in-place writes and must be blocked."""
+        result = validate_shell_command("sed -ni 's/x/y/' file.txt", allowlist=[], readonly=True)
+        assert result is not None and "Blocked" in result
+
+    # ── 6. Removed interpreters not in _READONLY_CMDS ────────────────────
+
+    def test_python3_blocked_in_readonly(self):
+        """python3 must not be in readonly set — arbitrary execution risk."""
+        result = validate_shell_command("python3 script.py", allowlist=[], readonly=True)
+        assert result is not None and "Blocked" in result
+
+    def test_node_blocked_in_readonly(self):
+        """node must not be in readonly set — arbitrary execution risk."""
+        result = validate_shell_command("node index.js", allowlist=[], readonly=True)
+        assert result is not None and "Blocked" in result
+
+    def test_awk_blocked_in_readonly(self):
+        """awk must not be in readonly set — can call system() without metacharacters."""
+        result = validate_shell_command("awk '{print}' file.txt", allowlist=[], readonly=True)
+        assert result is not None and "Blocked" in result
