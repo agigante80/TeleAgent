@@ -13,7 +13,7 @@ Treat `@here`, `@channel`, and `@everyone` Slack mentions as broadcast prefix al
 
 | Reviewer | Round | Score | Date       | Notes |
 |----------|-------|-------|------------|-------|
-| GateCode | 1     | -/10  | -          | Pending |
+| GateCode | 1     | 9/10  | 2026-03-15 | Corrected outbound-strip function name (`_post_delegations`), test file name (`test_slack_bot.py`), aligned test plan with actuals, flagged 4 missing tests, added trusted-bot routing step to flow diagram |
 | GateSec  | 1     | -/10  | -          | Pending |
 | GateDocs | 1     | 9/10  | 2026-03-15 | Created retroactive spec; problem statement, edge cases, and ACs all measurable; Slack-only scope clearly stated |
 
@@ -51,7 +51,7 @@ Affected users: Slack workspace operators running multiple AgentGate instances p
 
 | Layer | Location | Current behaviour |
 |-------|----------|-------------------|
-| Mention stripping (outbound) | `src/platform/slack.py:444` (`_build_reply`) | `_SLACK_SPECIAL_MENTION_RE` already strips `<!here>` / `<!channel>` / `<!everyone>` from *outbound* AI responses to prevent accidental re-broadcast |
+| Mention stripping (outbound) | `src/platform/slack.py:445` (`_post_delegations`) | `_SLACK_SPECIAL_MENTION_RE` already strips `<!here>` / `<!channel>` / `<!everyone>` from *outbound* delegation messages to prevent accidental re-broadcast |
 | Inbound routing | `src/platform/slack.py:686` (message handler) | No special handling — broadcast messages fall through to the normal prefix check or `PREFIX_ONLY` gate |
 | `PREFIX_ONLY` gate | `src/platform/slack.py:735` | Unprefixed messages are silently dropped when `PREFIX_ONLY=true` |
 
@@ -127,8 +127,10 @@ Single regex: `r"<!(channel|here|everyone)>"`.
 Runtime flow:
 
 ```
-Slack event → auth check (_is_allowed)
-           → files? → handle_files
+Slack event → subtype? (edit/delete) → return (ignored)
+           → bot_id? (trusted agent) → prefix-only routing → return
+           → auth check (_is_allowed) → denied? → return
+           → files? → handle_files → return
            → empty? → return
            → <!here|channel|everyone> in text?
                → strip all mention tokens → broadcast_text
@@ -236,21 +238,28 @@ if _SLACK_SPECIAL_MENTION_RE.search(text):
 
 ## Test Plan
 
-### `tests/unit/test_slack.py` additions
+### `tests/unit/test_slack_bot.py` additions
 
-| Test | What it checks |
+The following tests are written and passing (class `TestBroadcastRouting`). Four edge-case tests from the original plan are still missing — see the AC checklist below.
+
+| Test (actual name) | What it checks |
 |------|----------------|
-| `test_broadcast_here_dispatches_utility` | `<!here> gate status` → `_dispatch("status", …)` called once |
-| `test_broadcast_channel_dispatches_utility` | `<!channel> gate run ls` → `_dispatch("run", ["ls"], …)` called once |
-| `test_broadcast_everyone_dispatches_ai` | `<!everyone> gate explain this` → `_run_ai_pipeline` called with `"explain this"` |
-| `test_broadcast_bare_mention_ignored` | `<!here>` with no text after stripping → handler returns without calling dispatch or pipeline |
-| `test_broadcast_whitespace_only_ignored` | `<!here>   ` → same silent return as bare mention |
-| `test_broadcast_no_prefix_goes_to_ai` | `<!here> explain this code` (no bot prefix) → `_run_ai_pipeline` called with full text |
-| `test_broadcast_prefix_only_bypassed` | `PREFIX_ONLY=true`; `<!here> gate status` → `_dispatch` called (broadcast bypasses PREFIX_ONLY gate) |
-| `test_broadcast_auth_blocks_before_broadcast` | Unauthorised user sends `<!here> gate status` → auth denied, neither dispatch nor pipeline called |
+| `test_broadcast_ai_prompt_goes_to_pipeline` | `<!here> pull latest and review it` (no prefix) → `_run_ai_pipeline` called with stripped text |
+| `test_broadcast_own_prefix_command_dispatches` | `<!here> gate sync` → `_dispatch("sync", …)` called once |
+| `test_broadcast_other_prefix_goes_to_ai` | Bot prefix `sec`; message `<!here> dev sync` → `_run_ai_pipeline` called (prefix mismatch → AI prompt) |
+| `test_broadcast_empty_after_strip_is_noop` | `<!here>` with no payload → handler returns; neither dispatch nor pipeline called |
+| `test_broadcast_channel_trigger` | `<!channel> tell me the status` → `_run_ai_pipeline` called |
+| `test_broadcast_everyone_trigger` | `<!everyone> who are you?` → `_run_ai_pipeline` called |
+| `test_broadcast_blocked_for_unauthorized_user` | Unauthorised user sends `<!here> do something` → neither dispatch nor pipeline called |
+
+**Missing tests (should be added before closing the feature):**
+
+| Planned test name | What it should check |
+|---|---|
+| `test_broadcast_whitespace_only_ignored` | `<!here>   ` (whitespace only after strip) → same silent return as bare mention |
+| `test_broadcast_prefix_only_bypassed` | `PREFIX_ONLY=true`; `<!here> gate status` → `_dispatch` called (broadcast bypasses the PREFIX_ONLY gate) |
 | `test_broadcast_thread_ts_preserved` | Broadcast in a thread → `_dispatch` and `_run_ai_pipeline` receive correct `thread_ts` |
 | `test_broadcast_multiple_mentions_stripped` | `<!here> <!channel> gate status` → both tokens stripped; `_dispatch("status", …)` called once |
-| `test_broadcast_wrong_prefix_goes_to_ai` | Bot prefix `gate`; message `<!here> dev status` → `_run_ai_pipeline` called with `"dev status"` (prefix mismatch → plain AI prompt) |
 
 ---
 
@@ -319,5 +328,5 @@ This feature adds new behaviour with no breaking changes and no new env vars.
 - [x] `ruff check src/` reports no new linting issues.
 - [x] `docs/roadmap.md` entry is present and marked ✅ on merge to `main`.
 - [x] `docs/features/here-broadcast-command.md` status changed to `Implemented` on merge to `main`.
-- [ ] Unit tests listed in the Test Plan above are written and passing (`tests/unit/test_slack.py`). _(pending — tests not yet present)_
+- [~] Core broadcast unit tests present and passing in `tests/unit/test_slack_bot.py` (7/11 scenarios covered — 4 missing: whitespace-only, PREFIX_ONLY bypass, thread_ts, multiple mentions). _(open — add missing 4 tests before closing feature)_
 - [ ] `README.md` Slack section updated with broadcast tip _(optional, team discretion)_.
