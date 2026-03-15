@@ -167,6 +167,8 @@ Copy `.env.example` — it documents every variable with examples.
 | `CODEX_MODEL` | — | Per-backend model for `codex`; falls back to `AI_MODEL` then `o3` |
 | `AI_BASE_URL` | — | Base URL for Ollama or compatible endpoints |
 | `AI_CLI_OPTS` | — | Raw options passed verbatim to the CLI subprocess. **Empty (default) = full-auto per backend** (Copilot: `--allow-all`; Codex: `--approval-mode full-auto`). **When set, replaces the defaults entirely** — must include full-auto flags if still needed (e.g. `--allow-all --allow-url github.com`). Ignored (with a warning) when `AI_CLI=api`. |
+| `COPILOT_SKILLS_DIRS` | — | Colon-separated paths to extra Copilot skills directories (mount via Docker volume, e.g. `/skills`) |
+| `SYSTEM_PROMPT_FILE` | — | Path to a markdown file loaded as the AI system message (`AI_CLI=api` only). Must not be inside `REPO_DIR`; mount via a separate Docker volume. |
 
 ### Bot Behaviour
 
@@ -175,14 +177,15 @@ Copy `.env.example` — it documents every variable with examples.
 | `BOT_CMD_PREFIX` | `gate` | Prefix for utility commands |
 | `MAX_OUTPUT_CHARS` | `3000` | Truncate/summarize output beyond this length |
 | `HISTORY_ENABLED` | `true` | Set `false` to disable conversation history storage |
+| `HISTORY_TURNS` | `10` | Number of past exchanges injected per AI prompt (stateless backends only); `0` = disable injection, history still stored |
 | `STREAM_RESPONSES` | `true` | Set `false` to wait for full response before sending |
 | `STREAM_THROTTLE_SECS` | `1.0` | Seconds between streaming message edits |
 | `CONFIRM_DESTRUCTIVE` | `true` | Set `false` to skip confirmation for destructive shell commands |
 | `SKIP_CONFIRM_KEYWORDS` | — | Comma-separated keywords that bypass destructive confirmation (e.g. `push,rm`) |
+| `PREFIX_ONLY` | `false` | When `true`, ignore messages that don't start with the bot prefix — useful in multi-agent Slack workspaces |
+| `SYSTEM_PROMPT` | — | Optional text prepended to every AI prompt (inline). Use `SYSTEM_PROMPT_FILE` for file-based prompts. |
 | `SLACK_DELETE_THINKING` | `true` | Delete the ⏳ placeholder after posting the final AI response (Slack only). |
 | `SLACK_THREAD_REPLIES` | `false` | When `true`, post AI responses and bot output as thread replies to the triggering message (Slack only). |
-| `SLACK_MAX_DELEGATIONS` | `3` | Max number of delegation messages posted per AI response (defence-in-depth). |
-| `SLACK_DELEGATION_BLOCKLIST` | `run,sync,git,diff,log,restart,clear,confirm` | Comma-separated list of dangerous sub-commands that are blocked when delegating. |
 | `AI_TIMEOUT_SECS` | `0` | Hard timeout for any AI backend in seconds (0 = no timeout) |
 | `ALLOW_SECRETS` | `false` | When `false` (default), secrets are redacted from outgoing messages and git commit messages. Set `true` to allow secrets (dangerous). |
 | `THINKING_SLOW_THRESHOLD_SECS` | `15` | Seconds of silence before first "Still thinking…" update |
@@ -217,6 +220,12 @@ environment:
 | `WHISPER_API_KEY` | — | API key for Whisper (falls back to `AI_API_KEY` when provider is `openai`) |
 | `WHISPER_MODEL` | `whisper-1` | Whisper model name |
 
+### Audit
+
+| Variable | Default | Description |
+|---|---|---|
+| `AUDIT_ENABLED` | `true` | Set `false` to disable audit logging to `/data/audit.db` |
+
 ### Optional
 
 | Variable | Description |
@@ -224,6 +233,7 @@ environment:
 | `ALLOWED_USERS` | Comma-separated Telegram user IDs (extra allowlist, Telegram only) |
 | `SLACK_CHANNEL_ID` | **Required for the 🟢 Ready message.** Channel where the bot posts its startup notification and listens by default (e.g. `C0123456789`). Without this, the bot starts silently. |
 | `SLACK_ALLOWED_USERS` | JSON array of Slack user IDs allowed to use the bot (e.g. `["U111","U222"]`) |
+| `TRUSTED_AGENT_BOT_IDS` | Slack bot IDs (or `Name:prefix` pairs) that bypass the normal user filter for agent-to-agent messaging (e.g. `B012,GateCode:dev`) |
 | `BRANCH` | Git branch to clone (default: `main`) |
 | `REPO_HOST_PATH` | Host directory to bind-mount as `/repo` — persists across rebuilds |
 
@@ -474,6 +484,8 @@ Copy `.env.example` — it documents every variable with examples.
 | `CODEX_MODEL` | — | Per-backend model for `codex`; falls back to `AI_MODEL` then `o3` |
 | `AI_BASE_URL` | — | Base URL for Ollama or compatible endpoints |
 | `AI_CLI_OPTS` | — | Raw options passed verbatim to the CLI subprocess. **Empty (default) = full-auto per backend** (Copilot: `--allow-all`; Codex: `--approval-mode full-auto`). **When set, replaces the defaults entirely** — must include full-auto flags if still needed (e.g. `--allow-all --allow-url github.com`). Ignored (with a warning) when `AI_CLI=api`. |
+| `COPILOT_SKILLS_DIRS` | — | Colon-separated paths to extra Copilot skills directories (mount via Docker volume, e.g. `/skills`) |
+| `SYSTEM_PROMPT_FILE` | — | Path to a markdown file loaded as the AI system message (`AI_CLI=api` only). Must not be inside `REPO_DIR`; mount via a separate Docker volume. |
 
 ### Bot Behaviour
 
@@ -482,11 +494,17 @@ Copy `.env.example` — it documents every variable with examples.
 | `BOT_CMD_PREFIX` | `gate` | Prefix for utility commands |
 | `MAX_OUTPUT_CHARS` | `3000` | Truncate/summarize output beyond this length |
 | `HISTORY_ENABLED` | `true` | Set `false` to disable conversation history storage |
+| `HISTORY_TURNS` | `10` | Number of past exchanges injected per AI prompt (stateless backends only); `0` = disable injection, history still stored |
 | `STREAM_RESPONSES` | `true` | Set `false` to wait for full response before sending |
 | `STREAM_THROTTLE_SECS` | `1.0` | Seconds between streaming message edits |
 | `CONFIRM_DESTRUCTIVE` | `true` | Set `false` to skip confirmation for destructive shell commands |
 | `SKIP_CONFIRM_KEYWORDS` | — | Comma-separated keywords that bypass destructive confirmation (e.g. `push,rm`) |
+| `PREFIX_ONLY` | `false` | When `true`, ignore messages that don't start with the bot prefix — useful in multi-agent Slack workspaces |
+| `SYSTEM_PROMPT` | — | Optional text prepended to every AI prompt (inline). Use `SYSTEM_PROMPT_FILE` for file-based prompts. |
+| `SLACK_DELETE_THINKING` | `true` | Delete the ⏳ placeholder after posting the final AI response (Slack only). |
+| `SLACK_THREAD_REPLIES` | `false` | When `true`, post AI responses and bot output as thread replies to the triggering message (Slack only). |
 | `AI_TIMEOUT_SECS` | `0` | Hard timeout for any AI backend in seconds (0 = no timeout) |
+| `ALLOW_SECRETS` | `false` | When `false` (default), secrets are redacted from outgoing messages and git commit messages. Set `true` to allow secrets (dangerous). |
 | `THINKING_SLOW_THRESHOLD_SECS` | `15` | Seconds of silence before first "Still thinking…" update |
 | `THINKING_UPDATE_SECS` | `30` | Seconds between subsequent elapsed-time updates |
 | `AI_TIMEOUT_WARN_SECS` | `60` | Seconds before hard timeout to include a cancellation warning |
@@ -519,6 +537,12 @@ environment:
 | `WHISPER_API_KEY` | — | API key for Whisper (falls back to `AI_API_KEY` when provider is `openai`) |
 | `WHISPER_MODEL` | `whisper-1` | Whisper model name |
 
+### Audit
+
+| Variable | Default | Description |
+|---|---|---|
+| `AUDIT_ENABLED` | `true` | Set `false` to disable audit logging to `/data/audit.db` |
+
 ### Optional
 
 | Variable | Description |
@@ -526,6 +550,7 @@ environment:
 | `ALLOWED_USERS` | Comma-separated Telegram user IDs (extra allowlist, Telegram only) |
 | `SLACK_CHANNEL_ID` | **Required for the 🟢 Ready message.** Channel where the bot posts its startup notification and listens by default (e.g. `C0123456789`). Without this, the bot starts silently. |
 | `SLACK_ALLOWED_USERS` | JSON array of Slack user IDs allowed to use the bot (e.g. `["U111","U222"]`) |
+| `TRUSTED_AGENT_BOT_IDS` | Slack bot IDs (or `Name:prefix` pairs) that bypass the normal user filter for agent-to-agent messaging (e.g. `B012,GateCode:dev`) |
 | `BRANCH` | Git branch to clone (default: `main`) |
 | `REPO_HOST_PATH` | Host directory to bind-mount as `/repo` — persists across rebuilds |
 

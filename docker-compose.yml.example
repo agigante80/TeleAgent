@@ -11,6 +11,8 @@ services:
     build: .
     restart: unless-stopped
     env_file: .env
+    # Full list of env vars and their defaults: README.md → Environment Variables
+    # Key vars to set: PLATFORM, TG_BOT_TOKEN/SLACK_BOT_TOKEN, GITHUB_REPO_TOKEN, GITHUB_REPO, AI_CLI
     volumes:
       # If REPO_HOST_PATH is set in .env, bind-mount that host directory.
       # Otherwise a named Docker volume is used (repo persists but is container-internal).

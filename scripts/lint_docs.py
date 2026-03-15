@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Docs lint script — keeps roadmap and feature specs in sync.
+"""Docs lint script — keeps roadmap, feature specs, and config documentation in sync.
 
 Checks:
   1. Every feature spec (except _template.md) has a '> Status:' line.
   2. Every Implemented spec is NOT listed in docs/roadmap.md.
   3. Every roadmap feature link resolves to a real file.
   4. Every non-Implemented/non-Approved spec that has a feature file is in the roadmap.
+  5. Every env var defined in src/config.py is documented in README.md.
 
 Exit codes: 0 = all good, 1 = one or more violations found.
 """
@@ -18,7 +19,15 @@ from pathlib import Path
 
 FEATURES_DIR = Path("docs/features")
 ROADMAP_FILE = Path("docs/roadmap.md")
+CONFIG_FILE = Path("src/config.py")
+README_FILE = Path("README.md")
 TEMPLATE_NAME = "_template.md"
+
+# Nested BaseSettings fields on Settings / AIConfig — not direct env vars.
+_NESTED_CONFIG_FIELDS = {
+    "telegram", "github", "log", "bot", "ai", "voice", "slack", "audit",
+    "copilot", "codex", "direct", "model_config",
+}
 
 # Statuses that mean the feature is fully shipped — must NOT appear in roadmap.
 IMPLEMENTED_STATUSES = {"implemented"}
@@ -39,6 +48,54 @@ def extract_status(text: str) -> str | None:
     return m.group(1).replace("*", "").replace("✅", "").strip().lower()
 
 
+def extract_config_env_vars() -> set[str]:
+    """Parse src/config.py and return the set of env var names it declares.
+
+    Three sources:
+    - ``alias="VAR_NAME"`` → explicit env var alias
+    - ``env="VAR_NAME"`` inside Field() → explicit env override
+    - Plain field declaration (no alias/env) → field_name.upper()
+
+    Nested BaseSettings sub-config fields (telegram, bot, ai, …) are skipped.
+    """
+    if not CONFIG_FILE.is_file():
+        return set()
+
+    text = CONFIG_FILE.read_text()
+    env_vars: set[str] = set()
+
+    # 1. Explicit alias="VAR" or env="VAR"
+    env_vars.update(re.findall(r'alias="([A-Z][A-Z0-9_]+)"', text))
+    env_vars.update(re.findall(r'\benv="([A-Z][A-Z0-9_]+)"', text))
+
+    # 2. Plain field declarations — 4-space-indented, no alias/env on the same line
+    for m in re.finditer(r"^    ([a-z]\w*)\s*:", text, re.MULTILINE):
+        name = m.group(1)
+        if name in _NESTED_CONFIG_FIELDS:
+            continue
+        line_end = text.find("\n", m.start())
+        line = text[m.start():line_end]
+        if 'alias="' not in line and 'env="' not in line:
+            env_vars.add(name.upper())
+
+    return env_vars
+
+
+def check_config_coverage(readme_text: str) -> tuple[list[str], list[str]]:
+    """Return (errors, warnings) for env vars missing from README.md."""
+    env_vars = extract_config_env_vars()
+    if not env_vars:
+        return [], []
+
+    errors: list[str] = []
+    for var in sorted(env_vars):
+        if f"`{var}`" not in readme_text and var not in readme_text:
+            errors.append(
+                f"[CONFIG DRIFT] {var} is defined in src/config.py but not documented in README.md"
+            )
+    return errors, []
+
+
 def main() -> int:
     errors: list[str] = []
     warnings: list[str] = []
@@ -52,6 +109,8 @@ def main() -> int:
 
     roadmap_text = ROADMAP_FILE.read_text()
     roadmap_linked_files = set(ROADMAP_LINK_RE.findall(roadmap_text))
+
+    readme_text = README_FILE.read_text() if README_FILE.is_file() else ""
 
     spec_files = sorted(
         f for f in FEATURES_DIR.glob("*.md") if f.name != TEMPLATE_NAME
@@ -97,6 +156,11 @@ def main() -> int:
                 "but is not listed in docs/roadmap.md — add a roadmap row."
             )
 
+    # ── Check 5: every config.py env var is documented in README.md ─────────
+    cfg_errors, cfg_warnings = check_config_coverage(readme_text)
+    errors.extend(cfg_errors)
+    warnings.extend(cfg_warnings)
+
     # ── Report ────────────────────────────────────────────────────────────────
     for w in warnings:
         print(f"⚠  {w}")
@@ -104,7 +168,7 @@ def main() -> int:
         print(f"✗  {e}")
 
     if not errors and not warnings:
-        print(f"✓  docs lint passed — {len(spec_files)} specs checked, roadmap consistent.")
+        print(f"✓  docs lint passed — {len(spec_files)} specs checked, roadmap consistent, README config coverage complete.")
         return 0
 
     print(
