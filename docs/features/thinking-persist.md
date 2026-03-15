@@ -13,7 +13,7 @@ Fix the non-streaming message lifecycle so the "⏳ Still thinking…" placehold
 
 | Reviewer | Round | Score | Date | Notes |
 |----------|-------|-------|------|-------|
-| GateCode | 1 | -/10 | - | Pending |
+| GateCode | 1 | 9/10 | 2026-03-15 | Fixed config.py line ref, added README.md to Files table (required), corrected version caveat |
 | GateSec  | 1 | -/10 | - | Pending |
 | GateDocs | 1 | -/10 | - | Pending |
 
@@ -59,7 +59,7 @@ Affected users: all Telegram users and Slack users with `SLACK_DELETE_THINKING=f
 | Slack non-stream | `src/platform/slack.py:569-577` (`_handle_message`) | `finalize_thinking` runs, then `_deliver_slack` is called with `existing_ts=ts` (the thinking message TS), which overwrites it |
 | Slack streaming | `src/platform/slack.py:299-310` (`_stream_to_slack`) | `finalize_thinking` runs on thinking `ts`, `_deliver_slack` called with `final_ts` (separate message) — thinking persists ✅ |
 | Slack delete | `src/platform/slack.py:563-567` | When `SLACK_DELETE_THINKING=true`, thinking message is deleted, `_deliver_slack` receives `None` — response sent as new message |
-| Config | `src/config.py:60` (`BotConfig`) | `thinking_show_elapsed: bool = True` — comment says "final response posted as new message" but code doesn't implement this |
+| Config | `src/config.py:62` (`BotConfig`) | `thinking_show_elapsed: bool = True` — comment says "final response posted as new message" but code doesn't implement this |
 
 > **Key gap**: In the non-streaming path, `finalize_thinking()` is effectively a no-op because the delivery function immediately overwrites the thinking message. Streaming mode works correctly because it uses a separate message for the response. The fix is to align non-streaming with the streaming pattern: pass `None` as the delivery target so the response always goes to a new message when the thinking message is persisted.
 
@@ -310,13 +310,14 @@ thinking_show_elapsed: bool = True      # THINKING_SHOW_ELAPSED: persist "🤖 T
 
 | File | Action | Summary of change |
 |------|--------|-------------------|
-| `src/bot.py` | **Edit** | Pass `None` to `_deliver_telegram` when `thinking_show_elapsed=true` (1 line) |
-| `src/platform/slack.py` | **Edit** | Pass `None` to `_deliver_slack` when thinking persists (3 lines) |
+| `src/bot.py` | **Edit** | Pass `None` to `_deliver_telegram` when `thinking_show_elapsed=true` (~4 lines in non-streaming branch) |
+| `src/platform/slack.py` | **Edit** | Introduce `thinking_persists` flag and pass `None` to `_deliver_slack` accordingly (~6 lines in non-streaming branch) |
 | `src/config.py` | **Edit** | Fix config comment on `thinking_show_elapsed` (1 line) |
 | `tests/unit/test_bot.py` | **Edit** | Add test for thinking message persistence in non-streaming mode |
 | `tests/unit/test_thinking_persist.py` | **Create** | Tests for both platforms, both `THINKING_SHOW_ELAPSED` values |
+| `README.md` | **Edit** | Update `THINKING_SHOW_ELAPSED` description to reflect new behaviour (response now sent as separate message) |
 | `docs/features/thinking-persist.md` | **Edit** | Mark status as `Implemented` after merge |
-| `docs/roadmap.md` | **Edit** | Add entry for this fix |
+| `docs/roadmap.md` | **Edit** | Add ✅ to entry on merge |
 
 ---
 
@@ -357,7 +358,7 @@ no uncovered branches in the changed lines.
 
 ### `README.md`
 
-No new features or env vars to add. Optionally clarify the `THINKING_SHOW_ELAPSED` description:
+Update the `THINKING_SHOW_ELAPSED` description to reflect the new behaviour (the response is now always sent as a separate message when the setting is enabled):
 
 ```markdown
 | `THINKING_SHOW_ELAPSED` | `true` | When enabled, the thinking placeholder is updated to "🤖 Thought for Xs" and persists; the AI response is sent as a separate message. |
@@ -387,6 +388,8 @@ Change `Status: **Planned**` → `Status: **Implemented**` on merge to `main`.
 **Expected bump for this feature**: `PATCH` → `0.18.1`
 
 This is a bug fix: the code now matches the documented intent of `THINKING_SHOW_ELAPSED`. No new env vars, no breaking changes, no new commands.
+
+> ⚠️ *Merge-order caveat*: if `request-cancellation` (a minor bump, targeting `0.19.0`) merges to `main` first, this patch becomes `0.19.1`. Confirm actual base version at implementation time.
 
 ---
 
