@@ -28,8 +28,17 @@ Keeps the four key user-facing reference files — `README.md`, `.env.example`, 
 | GateCode | 3 | 8/10 | 2026-03-15 | Fixed Edge Case 3 (wrong direction — described coverage, not stale detection); fleshed out Step 6 with formal definition content spec for `skills/docs-agent.md`; corrected version bump note (0.18.x → current+1); tightened AC for `skills/docs-agent.md` definition. GateSec R1 F1 and F5 still unresolved — sec to verify scope on next pass. |
 | GateSec  | 3 | 9/10 | 2026-03-15 | All 5 R1 findings resolved — verified against spec and implementation. F1 regex guard in place, F2 intersection check operational, F4 word-boundary regex + comment exclusion, F5 `all_known` properly used. One non-blocking nit (triple `extract_config_env_vars()` call). No new security concerns. |
 
+| GateDocs | 3 | 9/10 | 2026-03-15 | Fixed `_parse_env_example` signature to accept `config_vars` param (eliminates 2 redundant `extract_config_env_vars()` calls per lint run); clarified version bump wording. |
+| GateCode | 4 | -/10 | - | Pending |
+| GateSec  | 4 | -/10 | - | Pending |
+| GateDocs | 4 | -/10 | - | Pending |
+
 **Status**: ⏳ Pending review
 **Approved**: No — requires all scores ≥ 9/10 in the same round
+
+### Round 3 Blocking Gap (GateCode 8/10)
+
+- `_parse_env_example` signature mismatch between spec and implementation: spec (updated in R3) now shows the function accepting `config_vars` as a parameter, but the implementation shipped with an internal `extract_config_env_vars()` call. GateCode should verify the live `scripts/lint_docs.py` matches the updated spec signature and, if not, apply the fix before scoring R4.
 
 ---
 
@@ -259,8 +268,11 @@ Add `check_env_example_coverage()` function:
 ENV_EXAMPLE_FILE = Path(".env.example")
 _PASSTHROUGH_MARKER = "# passthrough:"
 
-def _parse_env_example() -> tuple[set[str], set[str]]:
+def _parse_env_example(config_vars: set[str]) -> tuple[set[str], set[str]]:
     """Return (declared_vars, passthrough_vars) from .env.example.
+
+    Accepts the pre-extracted config_vars set to avoid redundant calls to
+    extract_config_env_vars() — callers always have it available already.
 
     A passthrough marker on a genuine config var is treated as declared
     (guards against accidental marker on a real var bypassing stale detection).
@@ -268,7 +280,6 @@ def _parse_env_example() -> tuple[set[str], set[str]]:
     declared, passthroughs = set(), set()
     if not ENV_EXAMPLE_FILE.is_file():
         return declared, passthroughs
-    config_vars = extract_config_env_vars()
     for line in ENV_EXAMPLE_FILE.read_text().splitlines():
         stripped = line.strip().lstrip("#").strip()
         if "=" not in stripped:
@@ -289,7 +300,7 @@ def check_env_example_coverage(config_vars: set[str]) -> tuple[list[str], list[s
     NOTE: .env.example is intentionally a curated subset — not every config var
     must appear here. Only stale (removed) vars are flagged.
     """
-    declared, passthroughs = _parse_env_example()
+    declared, passthroughs = _parse_env_example(config_vars)
     errors: list[str] = []
 
     # Stale entries: in .env.example (non-passthrough) but not in config.py
@@ -330,7 +341,7 @@ def check_compose_coverage(config_vars: set[str]) -> tuple[list[str], list[str]]
     """
     if not COMPOSE_EXAMPLE_FILE.is_file():
         return [], []
-    declared, passthroughs = _parse_env_example()
+    declared, passthroughs = _parse_env_example(config_vars)
     all_known = declared | passthroughs | config_vars
     errors: set[str] = set()
     for line in COMPOSE_EXAMPLE_FILE.read_text().splitlines():
@@ -452,7 +463,7 @@ to confirm no existing tests regress.
 
 This feature fixes a README bug and adds lint checks with no user-visible config changes.
 
-**Expected bump**: PATCH → `current + 1` (i.e. `0.19.1` if `request-cancellation` merges first as `0.19.0`, or whichever PATCH follows the last merged minor bump). No user-visible config changes.
+**Expected bump**: PATCH → next PATCH version after current `HEAD` on `main`. No user-visible config changes; this is a docs-tooling and lint improvement only.
 
 ---
 
