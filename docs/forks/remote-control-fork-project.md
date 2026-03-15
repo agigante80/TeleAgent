@@ -1,7 +1,7 @@
-# Remote Machine Control — Spin-off Project Brief
+# Remote Machine Control — Fork Project Brief
 
-> **Status:** Concept / Pre-development — Security review in progress  
-> **Origin:** Derived from [AgentGate](https://github.com/agigante80/AgentGate) v0.7.3  
+> **Status:** Concept / Pre-development — Full rewrite and review requested by all team members  
+> **Origin:** Derived from [AgentGate](https://github.com/agigante80/AgentGate) — forked from v0.7.3; parent project now at v0.18.0  
 > **Author:** Initial concept captured 2026-03-10  
 
 ---
@@ -14,11 +14,14 @@ This document proposes extracting and refocusing that power into a standalone pr
 
 The security implications are significant, intentional, and worth understanding deeply — both offensively and defensively.
 
+
+> ⚠️ **Note (2026-03-15):** AgentGate has evolved significantly since the v0.7.3 concept (now v0.18.0). Major additions include: Slack platform support, broadcast bare-command dispatch, long-response delivery (chunking/file upload), `init` command, audit logging, secret redaction (`SecretRedactor`), streaming throttle, voice transcription, and multi-agent delegation. *This spec requires a full rewrite to account for the new portable modules, updated architecture, and lessons learned.* All team members should review and update their respective sections.
+
 ---
 
 ## 2. Prompt for an AI Coding Agent
 
-> You are building a new open-source project called [PROJECT NAME]. It is a **spin-off of AgentGate** (https://github.com/agigante80/AgentGate), a Telegram/Slack bot with shell execution and AI backends.
+> You are building a new open-source project called [PROJECT NAME]. It is a **fork of AgentGate** (https://github.com/agigante80/AgentGate), a Telegram/Slack bot with shell execution and AI backends.
 >
 > **Goal:** Create a standalone Python application — installable with `pip install [package-name]` and startable with a single CLI command — that lets a user remotely control any machine (laptop, server, Raspberry Pi, cloud VM) from Telegram or Slack. The user can run shell commands, ask AI questions about the machine state, and receive streaming responses, all authenticated by Telegram chat ID / Slack user ID.
 >
@@ -56,7 +59,7 @@ The security implications are significant, intentional, and worth understanding 
 > - All destructive commands require inline confirmation (identical pattern)
 > - `COMMAND_ALLOWLIST` env var: if set, only whitelisted command prefixes are permitted. Must match on the *first shell word only*, not substring. (⚠️ *See OQ9*)
 > - `COMMAND_BLOCKLIST` env var: always-blocked patterns (e.g. `rm -rf /`, `mkfs`). Must use command-parsing, not substring matching — naive check is trivially bypassable via shell metacharacters, quoting, or path prefixes. (⚠️ *See OQ9*)
-> - `SecretRedactor` must be ported from AgentGate and applied to *all* output paths — shell results, AI responses, error messages. This is even more critical than in AgentGate because the spinoff runs on the user's actual machine, not a sandboxed container. (⚠️ *See OQ7*)
+> - `SecretRedactor` must be ported from AgentGate and applied to *all* output paths — shell results, AI responses, error messages. This is even more critical than in AgentGate because the fork runs on the user's actual machine, not a sandboxed container. (⚠️ *See OQ7*)
 > - Audit log is append-only; no API to delete it remotely. Must block `gate run` commands targeting the audit log file itself. (⚠️ *See OQ12*)
 > - README must include a section on responsible use, risks, and threat model
 > - `.env` file created by wizard must be written with `0600` permissions. (⚠️ *See OQ13*)
@@ -102,7 +105,7 @@ The security implications are significant, intentional, and worth understanding 
 | Strong red team / security connotation | Could attract wrong associations (malware naming) |
 | Memorable; sounds powerful | May cause friction in enterprise/compliance contexts |
 | Name is evocative of stealth / remote presence | Likely conflicts with existing tools / CTF references |
-| Immediately interesting to security researchers | GitHub/PyPI availability uncertain |
+| Immediately interesting to security researchers | ❌ PyPI: *TAKEN* (`ghostshell` v1.0.3) |
 
 ---
 
@@ -113,7 +116,7 @@ The security implications are significant, intentional, and worth understanding 
 | Norse mythology: the watchman of Bifrost (a bridge/gateway) | Already used by several projects (dashboards, auth) |
 | Perfect metaphor: stands watch, controls access, sees everything | Requires disambiguation |
 | Memorable, distinctive, culturally recognised | May seem over-branded for a CLI daemon |
-| Strong connotation of controlled access and vigilance | Non-obvious what it does without context |
+| Strong connotation of controlled access and vigilance | ❌ PyPI: *TAKEN* (`heimdall` v0.0.6) |
 
 ---
 
@@ -123,14 +126,84 @@ The security implications are significant, intentional, and worth understanding 
 |------|------|
 | Honest about what it is: a persistent background daemon | The "D" suffix reads like sysd naming — niche |
 | "Presence" captures remote awareness without implying shell | Technical audience only |
-| Unique; almost certainly available on PyPI | Not memorable outside sysadmin circles |
+| ✅ PyPI: available | Not memorable outside sysadmin circles |
 | Has a defensive, monitoring connotation | Undersells the AI and shell power |
 
 ---
 
+### Option F — **ShellRelay** *(added 2026-03-15)*
+
+| Pros | Cons |
+|------|------|
+| Descriptive: relays shell commands through a chat channel | Doesn't signal AI capability |
+| Immediately understandable, no ambiguity | Could be mistaken for a TCP relay tool |
+| ✅ PyPI: available | "Relay" may imply low-level networking |
+| Works as both noun and verb: "shellrelay into my Pi" | Slightly generic |
+
+---
+
+### Option G — **ReachBox** *(added 2026-03-15)*
+
+| Pros | Cons |
+|------|------|
+| "Reach any box" — memorable, punchy | "Box" is informal / sysadmin jargon |
+| Clearly communicates remote access purpose | No AI or shell signal |
+| ✅ PyPI: available | May not land with non-English speakers |
+| Short, clean CLI name: `reachbox` | Could be confused with a mailing tool |
+
+---
+
+### Option H — **GateDaemon** *(added 2026-03-15)*
+
+| Pros | Cons |
+|------|------|
+| Extends "Gate" brand family from AgentGate | "Daemon" is technical jargon |
+| Communicates it's a background service | May imply it IS AgentGate, not a separate project |
+| ✅ PyPI: available | Doesn't communicate remote/shell aspects |
+| Easy to type: `gatedaemon` | Name is long for a CLI command |
+
+---
+
+### Option I — **PocketShell** *(added 2026-03-15)*
+
+| Pros | Cons |
+|------|------|
+| "Shell in your pocket" — immediately evocative | Could imply a mobile app |
+| Communicates phone-based access perfectly | Doesn't signal AI capability |
+| ✅ PyPI: available | "Pocket" may imply lightweight / toy |
+| Friendly, approachable tone | May not suit enterprise contexts |
+
+---
+
+### Option J — **ShellPilot** *(added 2026-03-15)*
+
+| Pros | Cons |
+|------|------|
+| "Pilot your shell remotely with AI" — conveys both shell + AI | "Pilot" is overused in AI branding |
+| Strong action verb, professional tone | Could be confused with GitHub Copilot |
+| ✅ PyPI: available | Name is slightly generic |
+| Works well as CLI command: `shellpilot` | Doesn't communicate remote/daemon aspect |
+
+---
+
+### PyPI Availability Summary *(checked 2026-03-15)*
+
+| Name | `pip install` | Available? |
+|------|---------------|------------|
+| `remotegate` | `pip install remotegate` | ✅ Available |
+| `shellhand` | `pip install shellhand` | ✅ Available |
+| `ghostshell` | `pip install ghostshell` | ❌ Taken (v1.0.3) |
+| `heimdall` | `pip install heimdall` | ❌ Taken (v0.0.6) |
+| `presenced` | `pip install presenced` | ✅ Available |
+| `shellrelay` | `pip install shellrelay` | ✅ Available |
+| `reachbox` | `pip install reachbox` | ✅ Available |
+| `gatedaemon` | `pip install gatedaemon` | ✅ Available |
+| `pocketshell` | `pip install pocketshell` | ✅ Available |
+| `shellpilot` | `pip install shellpilot` | ✅ Available |
+
 ### Recommendation
 
-**ShellHand** for open-source community appeal and availability. **GhostShell** if the project leans explicitly into the red team angle. Avoid **Heimdall** due to naming conflicts.
+**ShellRelay** or **ShellPilot** for clarity and PyPI availability. **ShellHand** remains strong for community appeal. ~~**GhostShell**~~ and ~~**Heimdall**~~ are ruled out — both taken on PyPI. **GateDaemon** if brand continuity with AgentGate is a priority.
 
 ---
 
@@ -310,7 +383,7 @@ They exist and work. The gap is: they're **raw shell relays** with no AI. You st
 
 Security researchers and red teamers will immediately recognise what this architecture resembles: **a C2 (Command and Control) beacon using a legitimate third-party channel.**
 
-| Property | AgentGate / spin-off | Classic C2 implant |
+| Property | AgentGate / fork | Classic C2 implant |
 |----------|---------------------|-------------------|
 | Outbound-only traffic | ✅ HTTPS to Telegram API | ✅ Often beacons home via HTTPS |
 | Uses legitimate domain | ✅ `api.telegram.org` | ✅ Often uses CDNs, Slack, Discord |
@@ -417,7 +490,7 @@ Security researchers and red teamers will immediately recognise what this archit
 
 ### Security Open Questions (GateSec Review)
 
-7. **OQ7 — `SecretRedactor` not ported (🔴 CRITICAL).** The "Source of truth" module list omitted `src/redact.py`. On AgentGate this scrubs tokens, API keys, GitHub PATs, Bearer headers, and URLs with embedded credentials from all output. The spinoff runs on the user's *actual machine* — shell output from `cat ~/.bashrc`, `env`, `git remote -v`, `docker inspect`, or process lists is far more likely to contain real secrets. `SecretRedactor` must be in the portable modules list and wired into every output path. *Fixed in this review — added to Section 2 and Section 4.*
+7. **OQ7 — `SecretRedactor` not ported (🔴 CRITICAL).** The "Source of truth" module list omitted `src/redact.py`. On AgentGate this scrubs tokens, API keys, GitHub PATs, Bearer headers, and URLs with embedded credentials from all output. The fork project runs on the user's *actual machine* — shell output from `cat ~/.bashrc`, `env`, `git remote -v`, `docker inspect`, or process lists is far more likely to contain real secrets. `SecretRedactor` must be in the portable modules list and wired into every output path. *Fixed in this review — added to Section 2 and Section 4.*
 
 8. **OQ8 — `ALLOWED_USERS` must be mandatory, not optional (🔴 CRITICAL).** The spec said "optional `ALLOWED_USERS` allowlist (identical to AgentGate)." In AgentGate this is acceptable because the blast radius is a container with a cloned repo. Here the blast radius is *the user's entire machine*. If `TG_BOT_TOKEN` leaks and there's no `ALLOWED_USERS` check, anyone who can send a message to the bot gets a root shell. Recommendation: *require at least one entry in `ALLOWED_USERS` at startup; refuse to start without it.* *Fixed in this review — changed to "mandatory" in Section 2.*
 
@@ -454,7 +527,7 @@ Security researchers and red teamers will immediately recognise what this archit
 | TeleRAT | (malware) | Same outbound-C2 pattern, malicious context |
 | Mythic C2 | https://github.com/its-a-feature/Mythic | Full C2 framework with similar comms concepts |
 | ShellGPT | https://github.com/TheR1D/shell_gpt | AI shell assistant, local only |
-| AgentGate | https://github.com/agigante80/AgentGate | **Parent project** |
+| AgentGate | https://github.com/agigante80/AgentGate | **Parent project** (v0.18.0 — significantly evolved since v0.7.3 concept; broadcast dispatch, long-response delivery, init command, audit logging, secret redaction, Slack platform added) |
 
 ---
 
