@@ -1,8 +1,9 @@
 # Remote Machine Control — Fork Project Brief
 
 > **Status:** Concept / Pre-development — Full rewrite and review requested by all team members  
-> **Origin:** Derived from [AgentGate](https://github.com/agigante80/AgentGate) — forked from v0.7.3; parent project now at v0.18.0  
+> **Origin:** Derived from [AgentGate](https://github.com/agigante80/AgentGate) — fork from `develop` branch (HEAD `5725a77`); parent project now at v0.18.0+  
 > **Author:** Initial concept captured 2026-03-10  
+> **Purpose:** Created for *learning and research purposes only* — to understand the capabilities and limits of AI models and their possible integrations with real operating system environments. This project is not intended for production use as a security tool, and is not affiliated with any offensive security activity.  
 
 ---
 
@@ -15,13 +16,13 @@ This document proposes extracting and refocusing that power into a standalone pr
 The security implications are significant, intentional, and worth understanding deeply — both offensively and defensively.
 
 
-> ⚠️ **Note (2026-03-15):** AgentGate has evolved significantly since the v0.7.3 concept (now v0.18.0). Major additions include: Slack platform support, broadcast bare-command dispatch, long-response delivery (chunking/file upload), `init` command, audit logging, secret redaction (`SecretRedactor`), streaming throttle, voice transcription, and multi-agent delegation. *This spec requires a full rewrite to account for the new portable modules, updated architecture, and lessons learned.* All team members should review and update their respective sections.
+> ⚠️ **Note (2026-03-15):** AgentGate has evolved significantly since the v0.7.3 concept (now v0.18.0+). Major additions include: Slack platform support, broadcast bare-command dispatch, long-response delivery (chunking/file upload), `init` command, audit logging, secret redaction (`SecretRedactor`), streaming throttle, voice transcription, and multi-agent delegation. The fork source is now the **`develop` branch** (HEAD `5725a77`) — not v0.7.3 — to ensure all portable modules are current, the `AuditLog` ABC is available, and the `multi-provider-git-hosting` config refactor (when merged) does not create conflicts. *This spec requires a full rewrite to account for the new portable modules, updated architecture, and lessons learned.* All team members should review and update their respective sections.
 
 ---
 
 ## 2. Prompt for an AI Coding Agent
 
-> You are building a new open-source project called [PROJECT NAME]. It is a **fork of AgentGate** (https://github.com/agigante80/AgentGate), a Telegram/Slack bot with shell execution and AI backends.
+> You are building a new open-source project called [PROJECT NAME]. It is a **fork of AgentGate** (https://github.com/agigante80/AgentGate, branch `develop`, HEAD `5725a77`), a Telegram/Slack bot with shell execution and AI backends.
 >
 > **Goal:** Create a standalone Python application — installable with `pip install [package-name]` and startable with a single CLI command — that lets a user remotely control any machine (laptop, server, Raspberry Pi, cloud VM) from Telegram or Slack. The user can run shell commands, ask AI questions about the machine state, and receive streaming responses, all authenticated by Telegram chat ID / Slack user ID.
 >
@@ -76,14 +77,52 @@ The security implications are significant, intentional, and worth understanding 
 
 ## 3. Project Name Candidates
 
-### Option A — **RemoteGate**
+> **Naming constraints:** The project must not be associated with offensive security, malware, or red team tooling through its name. Names referencing stealth, implants, shadows, ghosts, reconnaissance, C2, RAT, or similar terms are explicitly ruled out — even if available on PyPI. The project is a learning tool for understanding AI integrations.
+
+### Ruled out immediately (red team / malware association risk)
+| Name | Why ruled out |
+|------|--------------|
+| `GhostShell` | "Ghost" evokes stealth implants / EDR evasion; also ❌ PyPI taken |
+| `ShadowGate`, `SilentShell`, `StealthPilot` | All evoke covert access / malware implant naming |
+| `PhantomShell`, `BackdoorAI`, `ImplantAI` | Explicitly offensive connotations |
+| `ReconGate`, `C2Gate`, `BeaconBot` | Direct red team terminology |
+
+---
+
+### Option A — **RemoteGate** *(user top candidate)*
 
 | Pros | Cons |
 |------|------|
-| Directly communicates purpose | Generic; likely taken on PyPI |
-| Shares "Gate" suffix with AgentGate — brand family | No security connotation |
-| Easy to remember and spell | Could imply network gateway (VPN/firewall) |
-| `pip install remotegate` reads naturally | Not distinctive enough to stand out |
+| Directly communicates purpose | Could imply network gateway (VPN/firewall) |
+| Shares "Gate" suffix with AgentGate — brand family | Less distinctive without AI signal |
+| Easy to remember and spell | |
+| `pip install remotegate` reads naturally | |
+
+✅ **PyPI:** `pip install remotegate` — **AVAILABLE**
+
+---
+
+### Option A1 — **RemoteAIGate** *(AI variant — recommended)*
+
+| Pros | Cons |
+|------|------|
+| Combines all three concepts: remote + AI + gate | Slightly longer to type |
+| Shares brand family with AgentGate | AI might feel redundant once it's known |
+| Clear AI signal in the name — no ambiguity | |
+| `pip install remoteaigate` is clean | |
+
+✅ **PyPI:** `pip install remoteaigate` — **AVAILABLE**
+
+---
+
+### Option A2 — **AIRemoteGate** *(AI-first variant)*
+
+| Pros | Cons |
+|------|------|
+| AI comes first — mirrors "AI-first" positioning | Less natural word order |
+| Distinctive variant of RemoteGate | |
+
+✅ **PyPI:** `pip install airemotegate` — **AVAILABLE**
 
 ---
 
@@ -92,118 +131,160 @@ The security implications are significant, intentional, and worth understanding 
 | Pros | Cons |
 |------|------|
 | Evocative of "remote hand" on a server | Less obviously AI-related |
-| Unusual enough to be memorable and available on PyPI | "Hand" metaphor is vague |
+| Unusual enough to be memorable | "Hand" metaphor is vague |
 | Works as a verb: "shellhand into my pi" | Slightly playful — may not suit enterprise |
-| Security community would appreciate the dual meaning | No "AI" signal in the name |
+
+✅ **PyPI:** `pip install shellhand` — **AVAILABLE**
 
 ---
 
-### Option C — **GhostShell**
-
-| Pros | Cons |
-|------|------|
-| Strong red team / security connotation | Could attract wrong associations (malware naming) |
-| Memorable; sounds powerful | May cause friction in enterprise/compliance contexts |
-| Name is evocative of stealth / remote presence | Likely conflicts with existing tools / CTF references |
-| Immediately interesting to security researchers | ❌ PyPI: *TAKEN* (`ghostshell` v1.0.3) |
-
----
-
-### Option D — **Heimdall**
-
-| Pros | Cons |
-|------|------|
-| Norse mythology: the watchman of Bifrost (a bridge/gateway) | Already used by several projects (dashboards, auth) |
-| Perfect metaphor: stands watch, controls access, sees everything | Requires disambiguation |
-| Memorable, distinctive, culturally recognised | May seem over-branded for a CLI daemon |
-| Strong connotation of controlled access and vigilance | ❌ PyPI: *TAKEN* (`heimdall` v0.0.6) |
-
----
-
-### Option E — **PresenceD** *(presence daemon)*
+### Option C — **PresenceD** *(presence daemon)*
 
 | Pros | Cons |
 |------|------|
 | Honest about what it is: a persistent background daemon | The "D" suffix reads like sysd naming — niche |
 | "Presence" captures remote awareness without implying shell | Technical audience only |
-| ✅ PyPI: available | Not memorable outside sysadmin circles |
 | Has a defensive, monitoring connotation | Undersells the AI and shell power |
+
+✅ **PyPI:** `pip install presenced` — **AVAILABLE**
 
 ---
 
-### Option F — **ShellRelay** *(added 2026-03-15)*
+### Option D — **ShellRelay**
 
 | Pros | Cons |
 |------|------|
 | Descriptive: relays shell commands through a chat channel | Doesn't signal AI capability |
 | Immediately understandable, no ambiguity | Could be mistaken for a TCP relay tool |
-| ✅ PyPI: available | "Relay" may imply low-level networking |
-| Works as both noun and verb: "shellrelay into my Pi" | Slightly generic |
+| Works as both noun and verb | Slightly generic |
+
+✅ **PyPI:** `pip install shellrelay` — **AVAILABLE**
 
 ---
 
-### Option G — **ReachBox** *(added 2026-03-15)*
+### Option E — **ReachBox**
 
 | Pros | Cons |
 |------|------|
 | "Reach any box" — memorable, punchy | "Box" is informal / sysadmin jargon |
 | Clearly communicates remote access purpose | No AI or shell signal |
-| ✅ PyPI: available | May not land with non-English speakers |
 | Short, clean CLI name: `reachbox` | Could be confused with a mailing tool |
+
+✅ **PyPI:** `pip install reachbox` — **AVAILABLE**
 
 ---
 
-### Option H — **GateDaemon** *(added 2026-03-15)*
+### Option F — **GateDaemon**
 
 | Pros | Cons |
 |------|------|
 | Extends "Gate" brand family from AgentGate | "Daemon" is technical jargon |
-| Communicates it's a background service | May imply it IS AgentGate, not a separate project |
-| ✅ PyPI: available | Doesn't communicate remote/shell aspects |
+| Communicates it's a background service | Doesn't communicate remote/shell aspects |
 | Easy to type: `gatedaemon` | Name is long for a CLI command |
+
+✅ **PyPI:** `pip install gatedaemon` — **AVAILABLE**
 
 ---
 
-### Option I — **PocketShell** *(added 2026-03-15)*
+### Option G — **PocketShell**
 
 | Pros | Cons |
 |------|------|
 | "Shell in your pocket" — immediately evocative | Could imply a mobile app |
 | Communicates phone-based access perfectly | Doesn't signal AI capability |
-| ✅ PyPI: available | "Pocket" may imply lightweight / toy |
-| Friendly, approachable tone | May not suit enterprise contexts |
+| Friendly, approachable tone | "Pocket" may imply lightweight / toy |
+
+✅ **PyPI:** `pip install pocketshell` — **AVAILABLE**
 
 ---
 
-### Option J — **ShellPilot** *(added 2026-03-15)*
+### Option H — **ShellPilot**
 
 | Pros | Cons |
 |------|------|
 | "Pilot your shell remotely with AI" — conveys both shell + AI | "Pilot" is overused in AI branding |
 | Strong action verb, professional tone | Could be confused with GitHub Copilot |
-| ✅ PyPI: available | Name is slightly generic |
 | Works well as CLI command: `shellpilot` | Doesn't communicate remote/daemon aspect |
+
+✅ **PyPI:** `pip install shellpilot` — **AVAILABLE**
 
 ---
 
-### PyPI Availability Summary *(checked 2026-03-15)*
+### PyPI Availability Summary *(re-verified 2026-03-15 with `pip install --dry-run`)*
 
-| Name | `pip install` | Available? |
-|------|---------------|------------|
-| `remotegate` | `pip install remotegate` | ✅ Available |
-| `shellhand` | `pip install shellhand` | ✅ Available |
-| `ghostshell` | `pip install ghostshell` | ❌ Taken (v1.0.3) |
-| `heimdall` | `pip install heimdall` | ❌ Taken (v0.0.6) |
-| `presenced` | `pip install presenced` | ✅ Available |
-| `shellrelay` | `pip install shellrelay` | ✅ Available |
-| `reachbox` | `pip install reachbox` | ✅ Available |
-| `gatedaemon` | `pip install gatedaemon` | ✅ Available |
-| `pocketshell` | `pip install pocketshell` | ✅ Available |
-| `shellpilot` | `pip install shellpilot` | ✅ Available |
+| Name | `pip install` | Available? | Notes |
+|------|---------------|------------|-------|
+| `remotegate` | `pip install remotegate` | ✅ Available | User top candidate |
+| `remoteaigate` | `pip install remoteaigate` | ✅ Available | **AI variant — recommended** |
+| `airemotegate` | `pip install airemotegate` | ✅ Available | AI-first variant |
+| `shellhand` | `pip install shellhand` | ✅ Available | |
+| `ghostshell` | `pip install ghostshell` | ❌ Taken | Also: wrong connotation |
+| `heimdall` | `pip install heimdall` | ❌ Taken | |
+| `presenced` | `pip install presenced` | ✅ Available | |
+| `shellrelay` | `pip install shellrelay` | ✅ Available | |
+| `reachbox` | `pip install reachbox` | ✅ Available | |
+| `gatedaemon` | `pip install gatedaemon` | ✅ Available | |
+| `pocketshell` | `pip install pocketshell` | ✅ Available | |
+| `shellpilot` | `pip install shellpilot` | ✅ Available | |
+
+> **Note:** The earlier PyPI check in this document used `pip index versions` which returns inconsistent output for non-existent packages. Results above are from `pip install --dry-run` which reliably returns `"Could not find a version"` for packages not on PyPI.
 
 ### Recommendation
 
-**ShellRelay** or **ShellPilot** for clarity and PyPI availability. **ShellHand** remains strong for community appeal. ~~**GhostShell**~~ and ~~**Heimdall**~~ are ruled out — both taken on PyPI. **GateDaemon** if brand continuity with AgentGate is a priority.
+**`remoteaigate`** (`pip install remoteaigate` — **AVAILABLE**) is the top recommendation:
+- Preserves the "Gate" brand link with AgentGate
+- "Remote" communicates the primary use case immediately
+- "AI" signals the core differentiator vs raw shell relay tools like Botgram
+- Avoids all red team / offensive security name associations
+- Project name: **RemoteAIGate**; GitHub repo: `remoteaigate`; CLI command: `remote-aigate` or `aigate`
+
+**`remotegate`** is a clean fallback if the AI signal in the name is considered redundant once the tool is installed.
+
+---
+
+## 3a. Platform / OS Compatibility
+
+> **Question:** Would the project work on any architecture — Windows, macOS, Linux — or would it be Linux-only to begin with?
+
+### Summary
+
+| Platform | Docker | Native install | Status |
+|----------|--------|---------------|--------|
+| **Linux** (amd64, arm64) | ✅ Full support | ✅ Full support | **Primary target** |
+| **macOS** (Apple Silicon / Intel) | ✅ via Docker Desktop | ✅ Native with minor gaps | **Works, minor command gaps** |
+| **Windows** | ✅ via Docker Desktop / WSL | ❌ Not supported natively | **Linux-only to start** |
+| **Raspberry Pi** (arm64/armv7) | ✅ | ✅ Native | **Explicitly supported** |
+
+### Why Linux-only for native install (v1)?
+
+The codebase inherits several Unix-only dependencies:
+
+1. **Shell commands in `gate snap` / `gate whoami`** — `uptime`, `df -h`, `free -h`, `ip a`, `uname -r` are Linux/macOS commands. Windows has no direct equivalents without PowerShell rewrites.
+2. **`asyncio.create_subprocess_shell`** — works on all platforms, but spawns `/bin/sh` on Unix and `cmd.exe` on Windows. Commands like `&&`, pipes `|`, and Unix utilities break under `cmd.exe`.
+3. **`pexpect`** (in `requirements.txt`) — does not support Windows natively. The Copilot and Codex backends use subprocess spawning that relies on Unix process management.
+4. **File permissions** — `os.chmod(path, 0o600)` for `.env` and audit log is a no-op on Windows (ACL-based permissions require `win32security`).
+5. **systemd integration** — first-run wizard generates a `.service` unit; no equivalent for Windows Services without a separate code path.
+
+### macOS status
+
+macOS works natively for the AI + Telegram/Slack core. Gaps:
+- `ip a` → use `ifconfig` instead (or `netifaces` library)
+- `free -h` → no equivalent; use `vm_stat` + calculation
+- `gate snap` would need platform detection (`platform.system() == "Darwin"`) and alternate commands
+
+These are **small, well-defined gaps** fixable in v1 with `platform.system()` branching.
+
+### Recommendation
+
+- **v1:** Linux + macOS native; Docker everywhere (amd64 + arm64 — same as AgentGate)
+- **v2:** Windows native (requires PowerShell backend for shell commands + pexpect replacement)
+- **Docker is the path of least resistance** on Windows — use `docker run` with a Linux container
+
+### Architecture (hardware)
+
+The parent AgentGate Dockerfile already handles `linux/amd64` and `linux/arm64` via `$(dpkg --print-architecture)`. The fork inherits this. Raspberry Pi (arm64 / armv7) is a first-class target — it's explicitly listed in the use cases.
+
+---
 
 ---
 
@@ -377,6 +458,8 @@ They exist and work. The gap is: they're **raw shell relays** with no AI. You st
 
 ## 9. Red Team / Blue Team Analysis
 
+> ⚠️ **Educational purpose statement:** This tool, and this analysis, exist purely for learning. The goal is to understand how AI models can be integrated with real system capabilities, what the natural security implications are, and how to reason about them from both sides. This project is *not* intended to be used for unauthorised access, red team engagements, or any activity outside a fully consented environment. Understanding how a class of tools works is the first step to defending against them — that is the point.
+
 > **Important disclosure:** This tool, by design, provides remote shell access to any machine it runs on. Like SSH, Metasploit, netcat, or a VPN, it is a dual-use technology. Understanding it from both offensive and defensive perspectives is the responsible way to build and deploy it.
 
 ### 🔴 Red Team Perspective: Why This Is a Compelling Implant Model
@@ -527,7 +610,7 @@ Security researchers and red teamers will immediately recognise what this archit
 | TeleRAT | (malware) | Same outbound-C2 pattern, malicious context |
 | Mythic C2 | https://github.com/its-a-feature/Mythic | Full C2 framework with similar comms concepts |
 | ShellGPT | https://github.com/TheR1D/shell_gpt | AI shell assistant, local only |
-| AgentGate | https://github.com/agigante80/AgentGate | **Parent project** (v0.18.0 — significantly evolved since v0.7.3 concept; broadcast dispatch, long-response delivery, init command, audit logging, secret redaction, Slack platform added) |
+| AgentGate | https://github.com/agigante80/AgentGate | **Parent project** (`develop` HEAD `5725a77` — fork source; includes broadcast dispatch, long-response delivery, init command, audit logging, secret redaction, Slack platform, multi-provider git hosting spec) |
 
 ---
 
@@ -538,7 +621,8 @@ Security researchers and red teamers will immediately recognise what this archit
 | GateSec  | R1    | 5/10  | 🔴 `SecretRedactor` missing from portable modules (OQ7). 🔴 `ALLOWED_USERS` optional — must be mandatory for remote shell (OQ8). 🔴 `COMMAND_BLOCKLIST` uses bypassable substring matching (OQ9). 🟡 `gate watch` unbounded (OQ11). 🟡 Audit log self-deletable (OQ12). 🟡 `.env` permissions unspecified (OQ13). 🟡 `gate env` filter undefined (OQ14). 10 OQs added (OQ7–OQ16). | `f4438e4` |
 | GateCode | R1    | 6/10  | Decisions recorded on three critical/high items: OQ9 → `shlex.split()` + first-token canonicalization + shell metacharacter detection + recursive shell-interpreter check (rbash rejected). OQ11 → proposed limits adopted with env var overrides (`WATCH_MIN_INTERVAL_SECS=10`, `WATCH_MAX_CONCURRENT=3`, `WATCH_MAX_LIFETIME_SECS=3600`). OQ12 → (a) internal path blocklist + (b) optional syslog dual-write (`AUDIT_SYSLOG_HOST`); HMAC chaining deferred to v2. Estimate increase (18-22h → 25-32h) validated — security hardening on OQ9 alone adds ~3h. Outstanding: OQ10 (`gate cd` sandbox), OQ13–OQ16 implementation details need decisions before coding starts. Score raised from GateSec baseline; still pre-implementation. | TBD |
 | GateDocs | R1    | 6/10  | **(1) Spec as AI agent prompt:** Section 2 is strong and actionable. Gaps: no DB schema for new columns (CWD per session, watch registry), no dependency inventory (new packages vs AgentGate baseline), no minimum Python version / OS compatibility statement. **(2) OQ decisions:** OQ9/OQ11/OQ12 decisions are detailed, unambiguous, and immediately implementable — model quality. OQ10 (gate cd sandbox), OQ13 (.env perms decision beyond annotation), OQ14 (gate env filter), OQ16 (health auth) remain open with no decisions; these are implementation-blocking and should be resolved before a coding agent starts. Non-numbered items 1–6 in Section 11 (name, shared-library, multi-machine schema, file transfer, audit format, disclosure) are also open design decisions — consolidate them as OQ1–OQ6 or close them explicitly. **(3) Estimate gaps:** `gate watch stop [id]` subcommand (from OQ11 decision), `ALLOWED_USERS` mandatory startup enforcement (OQ8), CI/CD workflow setup and PyPI publish pipeline are absent from the table — estimate understates effort by ~3-5h. **(4) Missing sections:** No testing strategy (only 1 row in estimate — what gets tested, what test types, coverage targets?). No licensing section (MIT? GPL? Critical given dual-use nature). No versioning/release plan (semver, PyPI cadence). No migration/coexistence notes for existing AgentGate users. **(5) Section 9 as security.md seed:** Usable but incomplete — needs: explicit threat model summary (assets, actors, assumptions), trust boundary description, token revocation procedure beyond one-line BotFather note, incident response checklist, and cross-references to OQ10 (gate cd → /etc/shadow path) and OQ11 (gate watch exfiltration loop) as attack surfaces currently absent from the section. HMAC chaining deferral (OQ12) should be a documented known gap. | `9b75c14` |
+| GateCode | R2    | 7/10  | Reviewed per user request (2026-03-15). **(1) Fork source updated:** v0.7.3 → `develop` HEAD `5725a77` — ensures all portable modules (`AuditLog` ABC, `SecretRedactor`, streaming throttle, multi-agent delegation) are current. The agent prompt (Section 2) updated accordingly. **(2) Names:** Re-verified all candidates with `pip install --dry-run` (previous `pip index versions` check was unreliable — returns non-standard errors for non-existent packages). All original "✅ Available" candidates confirmed available. New AI variants added: `remoteaigate` ✅, `airemotegate` ✅, `remotegateai` ✅. Red team / malware-associated names explicitly ruled out with rationale. **(3) Recommendation changed:** `remoteaigate` (project name **RemoteAIGate**) replaces ShellRelay/ShellPilot as primary recommendation — preserves brand family, adds AI signal, no offensive connotation. `remotegate` as clean fallback. **(4) Platform compatibility:** New Section 3a added — v1 is Linux + macOS native + Docker everywhere (amd64/arm64). Windows requires Docker/WSL; native Windows support deferred to v2 due to `pexpect`, shell command differences, and `chmod 0600` limitations. Raspberry Pi (arm64/armv7) explicitly supported. **(5) Learning purpose:** Prominent educational purpose statement added to header, footer, and Section 9. **(6) Section 9 (Red/Blue):** Educational disclaimer block added at top — clearly frames the dual-use analysis as learning, not operational guidance. | *current* |
 
 ---
 
-*Document generated: 2026-03-10. Security review: 2026-03-14. This is a planning document, not production code. All security analysis is provided for educational and defensive awareness purposes.*
+*Document generated: 2026-03-10. Security review: 2026-03-14. GateCode R1 review (fork source, naming, platform compatibility): 2026-03-15. This is a planning document, not production code. All security analysis is provided for educational and defensive awareness purposes. This project is created for learning reasons — to understand the capabilities and limits of AI and possible integrations with operating system environments.*
