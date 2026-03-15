@@ -34,7 +34,7 @@ pytest tests/ --cov=src --cov-report=term-missing
 
 AgentGate is an async Python bot (Telegram **or** Slack) that acts as a gateway to pluggable AI backends. Each deployment is one Docker container per project repo.
 
-**Startup flow** (`src/main.py`): validate config → clone GitHub repo → auto-install deps → init SQLite history DB → init audit log → create AI backend → start bot (Telegram or Slack) → send 🟢 Ready.
+**Startup flow** (`src/main.py`): validate config → clone GitHub repo → auto-install deps → init SQLite history DB → init audit log → build `Services` dataclass → create AI backend → start bot (Telegram or Slack) → send 🟢 Ready. Storage and audit backends are selected via `storage_registry.create(settings.storage.storage_backend)` and `audit_registry.create(settings.storage.audit_backend)`.
 
 **Config** (`src/config.py`): Pydantic `BaseSettings` split into six sub-configs (`TelegramConfig`, `SlackConfig`, `GitHubConfig`, `BotConfig`, `AIConfig`, `VoiceConfig`). All settings come from env vars. `Settings.load()` constructs them and is the only entry point. `TelegramConfig` fields are optional (default `""`) — validation that they're present happens in `_validate_config()` in `main.py`. Module-level `REPO_DIR` and `DB_PATH` constants are defined here — always import these instead of hardcoding `/repo` or `/data`.
 
@@ -59,6 +59,16 @@ AgentGate is an async Python bot (Telegram **or** Slack) that acts as a gateway 
 
 **History** (`src/history.py`): `ConversationStorage` ABC with `SQLiteStorage` concrete implementation (async SQLite at `/data/history.db`). `SQLiteStorage` is constructed in `main.py` (`SQLiteStorage(DB_PATH)`, `await storage.init()`) and injected into `_BotHandlers` and `SlackBot` constructors. `build_context()` remains a module-level pure function. Stores exchanges per `chat_id`; the number injected per prompt is controlled by `HISTORY_TURNS` (default `10`). Only used by stateless backends; stateful backends track context themselves.
 
+**Registry** (`src/registry.py`): `Registry[T]` generic class. Four module-level instances: `backend_registry` (AI backends), `platform_registry` (bot platforms), `storage_registry` (history storage), `audit_registry` (audit log). Use `@registry.register("key")` to register; use `registry.create("key", ...)` to instantiate. Registries are loaded lazily via `_load_backends()` / `_load_platforms()` in `factory.py` and `main.py` — import-safe, fork-safe.
+
+**Services** (`src/services.py`): `Services` dataclass bundles `shell: ShellService`, `repo: RepoService | NullRepoService`, and `audit: AuditLog` for injection into `_BotHandlers` and `SlackBot`. `RepoService` wraps `REPO_DIR`; `NullRepoService` is the no-op fallback. Construct once in `main.py` and pass to the bot constructor — do not re-construct per request.
+
+**Command registry** (`src/commands/registry.py`): `CommandDef` datatype + `register_command(name, help)` decorator. Registers handler methods into the module-level `COMMANDS` dict. Raises `ValueError` on duplicate `name` (idempotent on hot-reload). `_validate_command_symmetry()` asserts every Telegram command has a Slack mirror. All `cmd_*` methods in `bot.py` and `slack.py` use `@register_command`.
+
+**`SecretProvider` protocol** (`src/config.py`): each sub-config class (`TelegramConfig`, `SlackConfig`, `GitHubConfig`, `BotConfig`, `AIConfig`, `VoiceConfig`, `StorageConfig`) implements `secret_values() -> list[str]` returning its live secret strings. `SecretRedactor._collect_secrets()` iterates sub-configs via protocol duck-typing — add `secret_values()` to any new sub-config. `StorageConfig` holds `STORAGE_BACKEND` and `AUDIT_BACKEND` (default `"sqlite"`/`"sqlite"`).
+
+**`_loader.py`** (`src/_loader.py`): `_module_file_exists(dotted_name) -> bool` — fork-safe existence check using `importlib.util.find_spec`. Used by `_load_backends()` and `_load_platforms()` to skip missing optional modules without bare `try/except ImportError`.
+
 **Secret redaction** (`src/redact.py`): `SecretRedactor` is instantiated in both `_BotHandlers` and `SlackBot` at startup. It scrubs outgoing text (AI responses, shell output, error messages) of known token values collected from `Settings` and common secret patterns (GitHub PATs, Slack tokens, OpenAI keys, Bearer headers, URLs with embedded credentials). Set `ALLOW_SECRETS=true` to disable. Always pass the redactor to `run_shell()` and apply `redactor.redact()` to any text sent back to the user.
 
 **Shell execution** (`src/executor.py`): `run_shell(cmd, max_chars, redactor=None)` runs commands in `REPO_DIR`, appends `[exit N]`, and truncates long output. `is_destructive()` keyword-checks commands; `is_exempt()` checks against `BotConfig.skip_confirm_keywords`. `summarize_if_long()` wraps content in `<OUTPUT>` tags before sending to the AI (prompt injection hardening). `sanitize_git_ref(ref)` validates user-supplied git refs against an allowlist pattern and returns a shell-quoted string or `None` — always use this before interpolating user input into git commands.
@@ -75,8 +85,9 @@ AgentGate is an async Python bot (Telegram **or** Slack) that acts as a gateway 
 
 - **Secret redaction**: always pass the `SecretRedactor` instance to `run_shell()` and call `redactor.redact()` on any text going back to the user — AI responses, error messages, shell output. New bot/Slack handlers must follow the same pattern as existing ones in `bot.py` / `slack.py`.
 - **Git ref safety**: use `executor.sanitize_git_ref(ref)` before interpolating any user-supplied string into a git command. It returns `None` for invalid refs.
-- **Adding a new AI backend**: subclass `AICLIBackend`, set `is_stateful`, implement `send()`. Override `stream()` for true streaming, `close()` if the backend holds a long-lived process. Register a branch in `factory.py`. Use `SubprocessMixin` if spawning child processes.
-- **New config values go in the appropriate sub-config** in `src/config.py` (`BotConfig`, `AIConfig`, `SlackConfig`, etc.). All values come from env vars via Pydantic `BaseSettings`.
+- **Adding a new AI backend**: subclass `AICLIBackend`, set `is_stateful`, implement `send()`. Override `stream()` for true streaming, `close()` if the backend holds a long-lived process. Decorate with `@backend_registry.register("key")` and add to `_load_backends()` in `factory.py`. Use `SubprocessMixin` if spawning child processes.
+- **New config values go in the appropriate sub-config** in `src/config.py` (`BotConfig`, `AIConfig`, `SlackConfig`, `StorageConfig`, etc.). All values come from env vars via Pydantic `BaseSettings`. Every sub-config must implement `secret_values() -> list[str]` (return live secret strings; empty list if none).
+- **Adding a new bot command**: implement `cmd_<name>` in both `bot.py` and `slack.py`, decorate both with `@register_command("name", help="…")`. `_validate_command_symmetry()` will fail CI if one platform is missing.
 - **Auth guards**: every Telegram handler must be wrapped with `@_requires_auth`. Every Slack handler must call `self._is_allowed(channel, user)` early.
 - **Tests strip real credentials**: `conftest.py` has an `autouse` fixture that deletes real credential env vars so tests never accidentally hit live services.
 - **Test helpers**: use `MagicMock(spec=SettingsSubclass)` and set attributes directly — see `tests/unit/test_bot.py` for the `_make_settings` / `_make_update` pattern.
@@ -98,7 +109,9 @@ class BotConfig(BaseSettings):
 ```python
 # src/ai/my_backend.py
 from src.ai.adapter import AICLIBackend
+from src.registry import backend_registry
 
+@backend_registry.register("mybackend")
 class MyBackend(AICLIBackend):
     is_stateful = True  # or False if the bot provides history via context injection
 
@@ -106,10 +119,23 @@ class MyBackend(AICLIBackend):
     def clear_history(self) -> None: ...
     def close(self) -> None: ...  # if holding a subprocess/PTY
 
-# src/ai/factory.py — add branch in create_backend()
-if ai.ai_cli == "mybackend":
-    from src.ai.my_backend import MyBackend
-    return MyBackend(...)
+# src/ai/factory.py — add to _load_backends():
+_module_file_exists("src.ai.my_backend") and __import__("src.ai.my_backend")
+```
+
+### Adding a new sub-config with secrets
+```python
+# src/config.py
+class MyConfig(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    my_token: str = Field("", env="MY_TOKEN")
+
+    def secret_values(self) -> list[str]:
+        return [v for v in [self.my_token] if v]
+
+# Add to Settings:
+class Settings(BaseSettings):
+    my: MyConfig = MyConfig()
 ```
 
 ### Test pattern
