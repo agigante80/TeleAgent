@@ -15,7 +15,7 @@ Allow AgentGate to clone, sync, and interact with repositories hosted on GitLab,
 |----------|-------|-------|------|-------|
 | GateCode | 1 | 8/10 | 2026-03-15 | OQ9/10/11/12/13/14/15 resolved in code samples. -1 OQ16 (git filter attack) accepted as pre-existing. -1 OQ11 REPO_USER per-provider format not enforced by Pydantic (runtime only). |
 | GateSec  | 1 | 5/10 | 2026-03-15 | 2 blockers (OQ9, OQ10). See OQ9–OQ16 below. Commit `2db3bdd` |
-| GateDocs | 1 | -/10 | - | Pending |
+| GateDocs | 1 | 7/10 | 2026-03-15 | 4 spec gaps fixed: missing `_AUTH_USERS` def, unused validation regexes, wrong test file for OQ14 test, inaccurate OQ16 mitigation. +`.env.example` added to Doc Updates. |
 
 **Status**: ⏳ Pending review
 **Approved**: No — requires all scores ≥ 9/10 in the same round
@@ -260,6 +260,15 @@ _CLONE_URL_TEMPLATES = {
     "azure":     "https://{user}:{token}@{host}/{user}/{repo}", # REPO_USER = org
 }
 
+# Default auth user prefix per provider (used by configure_git_auth).
+# Bitbucket and Azure use REPO_USER as the actual username/org, so no prefix is needed.
+_AUTH_USERS: dict[str, str] = {
+    "github":    "x-token-auth",
+    "gitlab":    "oauth2",
+    "bitbucket": "",   # REPO_USER is the Bitbucket username; no additional prefix
+    "azure":     "",   # REPO_USER is the Azure org; no additional prefix
+}
+
 def _build_clone_url(cfg) -> str:
     if cfg.repo_clone_url:
         # OQ9: HTTPS-only — reject file://, ssh://, git://, etc.
@@ -282,6 +291,13 @@ def _build_clone_url(cfg) -> str:
 
     host = cfg.repo_host or _DEFAULT_HOSTS.get(cfg.repo_provider, "github.com")
     tmpl = _CLONE_URL_TEMPLATES.get(cfg.repo_provider, _CLONE_URL_TEMPLATES["github"])
+    # OQ11: per-provider format validation for REPO_USER before URL-encoding.
+    if cfg.repo_provider == "bitbucket" and cfg.repo_user:
+        if not _BITBUCKET_USER_RE.match(cfg.repo_user):
+            raise ValueError(f"REPO_USER contains invalid Bitbucket username characters: {cfg.repo_user!r}")
+    if cfg.repo_provider == "azure" and cfg.repo_user:
+        if not _AZURE_ORG_RE.match(cfg.repo_user):
+            raise ValueError(f"REPO_USER contains invalid Azure org name characters: {cfg.repo_user!r}")
     # OQ11: URL-encode token and user — special characters (@ / :) would break URL structure.
     safe_token = urllib.parse.quote(cfg.repo_token, safe="")
     safe_user  = urllib.parse.quote(cfg.repo_user,  safe="")
@@ -365,9 +381,10 @@ if settings.repo.repo_clone_url:
         raise ValueError(
             f"REPO_CLONE_URL must use http:// or https://; got scheme {parsed.scheme!r}"
         )
-# OQ10: REPO_HOST must be a bare hostname
-import re as _re
-_HOSTNAME_RE = _re.compile(r'^[A-Za-z0-9]([A-Za-z0-9\-\.]*[A-Za-z0-9])?$')
+# OQ10: REPO_HOST must be a bare hostname.
+# Note: _HOSTNAME_RE is the same regex defined at module level in repo.py — import it
+# rather than redefining it here to avoid drift between the two copies.
+from src.repo import _HOSTNAME_RE
 if settings.repo.repo_host and (
     not _HOSTNAME_RE.match(settings.repo.repo_host)
     or any(c in settings.repo.repo_host for c in ("://", "@", "/"))
@@ -488,13 +505,13 @@ await repo.configure_git_auth(settings.repo.repo_token, host, user)
 | `test_build_clone_url_rejects_file_protocol` | `REPO_CLONE_URL=file:///…` raises `ValueError` (OQ9) |
 | `test_repo_host_rejects_url_injection` | `REPO_HOST=evil.com/../../` is rejected (OQ10) |
 | `test_repo_user_url_encoded` | `REPO_USER` with special chars is safely encoded (OQ11) |
-| `test_repo_clone_url_token_redacted` | Token in `REPO_CLONE_URL` is redacted in output (OQ14) |
 
 ### `tests/unit/test_redact.py` additions *(GateSec R1)*
 
 | Test | What it checks |
 |------|----------------|
 | `test_redact_gitlab_ci_build_token` | `glcbt-abc123…` is scrubbed from text |
+| `test_repo_clone_url_token_redacted` | Token embedded in `REPO_CLONE_URL` is extracted and redacted from AI output (OQ14) — note: this tests `main.py` startup logic, not `repo.py`, so belongs here alongside other redaction tests |
 
 
 ---
@@ -514,10 +531,21 @@ Add env var rows (agnostic pattern — same structure as AI config vars):
 | `REPO` | `""` | Repo identifier (`owner/repo`). Replaces `GITHUB_REPO`. |
 | `REPO_HOST` | _(provider default)_ | Override hostname for self-hosted instances. Like `AI_BASE_URL`. |
 | `REPO_USER` | `""` | Username/org for providers that need it (Bitbucket username, Azure org). |
-| `REPO_CLONE_URL` | `""` | Escape hatch: full clone URL, skips template construction. |
+| `REPO_CLONE_URL` | `""` | Escape hatch: full clone URL (token already embedded), skips template construction. *Must use `https://` — `ssh://`, `file://`, `git://` are rejected at startup.* |
 
 Add a **Migration Guide** callout:
 > `GITHUB_REPO_TOKEN` → `REPO_TOKEN`, `GITHUB_REPO` → `REPO`. All other behaviour unchanged for GitHub users.
+
+### `.env.example`
+
+Update the lean `.env.example` to replace `GITHUB_REPO_TOKEN` and `GITHUB_REPO` with the new agnostic names. At minimum include `REPO_PROVIDER`, `REPO_TOKEN`, and `REPO`. Existing lean format (full list in README) is preserved.
+
+```dotenv
+REPO_PROVIDER=github
+REPO=owner/repo
+REPO_TOKEN=your-token-here
+# For self-hosted or alternative providers, see README for REPO_HOST, REPO_USER, REPO_CLONE_URL
+```
 
 ### `docs/roadmap.md`
 
@@ -570,7 +598,7 @@ Add:
 
 15. **OQ15 — Commit-msg hook missing `glcbt-` pattern** *(GateSec R1 — 🟡 LOW → ✅ Resolved GateSec R1)* — `glcbt-` pattern added to Step 4 commit-msg hook list to stay in sync with Step 3 redact.py patterns.
 
-16. **OQ16 — Git smudge/clean filter attacks from cloned repos** *(GateSec R1 — 🟡 MEDIUM, pre-existing — Accepted)* — Multi-provider support amplifies the existing risk from malicious `.gitattributes` smudge/clean filters. *Disposition:* accepted as pre-existing. Recommended mitigations (`filter.*.required false`, `protocol.file.allow never`) tracked as a follow-up hardening item alongside Issue #17.
+16. **OQ16 — Git smudge/clean filter attacks from cloned repos** *(GateSec R1 — 🟡 MEDIUM, pre-existing — Accepted)* — Multi-provider support amplifies the existing risk from malicious `.gitattributes` smudge/clean filters. *Disposition:* accepted as pre-existing. Recommended mitigations: set `filter.<name>.clean` and `filter.<name>.smudge` to `cat` globally (neutralises registered filters), or set `GIT_CONFIG_NOSYSTEM=1` and supply a restricted global gitconfig that defines no filters. Note: `filter.*.required false` only prevents git from *failing* when a filter binary is absent — it does not prevent execution of filters that *are* present. Tracked as a follow-up hardening item (open GitHub issue).
 
 ---
 
@@ -587,7 +615,7 @@ Add:
 - [ ] Feature works on both Telegram and Slack.
 - [ ] Feature works with all AI backends; `copilot` + non-GitHub repo combination is documented (not blocked).
 - [ ] OQ1–OQ8 resolved or explicitly accepted as known limitations with documentation.
-- [ ] OQ9–OQ16 resolved or explicitly accepted (all resolved in spec as of GateCode R1).
+- [ ] OQ9–OQ16 resolved or explicitly accepted (OQ9–OQ15 resolved in spec; OQ16 accepted as pre-existing with mitigation note).
 - [ ] `gate info` correctly shows provider name on both platforms.
 - [ ] GitLab PAT, deploy token, and CI build token patterns are redacted in AI responses and shell output.
 - [ ] Bitbucket/Azure tokens are redacted by value-matching (verified by test).
