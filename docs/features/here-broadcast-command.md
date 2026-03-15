@@ -14,10 +14,10 @@ Treat `@here`, `@channel`, and `@everyone` Slack mentions as broadcast prefix al
 | Reviewer | Round | Score | Date       | Notes |
 |----------|-------|-------|------------|-------|
 | GateCode | 1     | 9/10  | 2026-03-15 | Corrected outbound-strip function name (`_post_delegations`), test file name (`test_slack_bot.py`), aligned test plan with actuals, flagged 4 missing tests, added trusted-bot routing step to flow diagram |
-| GateSec  | 1     | -/10  | -          | Pending |
+| GateSec  | 1     | 9/10  | 2026-03-15 | All code refs verified; auth-before-broadcast correct; added trusted-bot broadcast edge case (F1) |
 | GateDocs | 1     | 9/10  | 2026-03-15 | Created retroactive spec; problem statement, edge cases, and ACs all measurable; Slack-only scope clearly stated |
 
-**Status**: ⏳ Pending full review (GateCode + GateSec R1 outstanding)
+**Status**: ⏳ Pending GateDocs R1
 **Approved**: No — requires all scores ≥ 9/10 in the same round
 
 ---
@@ -312,6 +312,31 @@ This feature adds new behaviour with no breaking changes and no new env vars.
 7. **`gate restart` interaction** — Broadcast handling is stateless (no new background tasks or file handles). `gate restart` cleans up correctly.
 
 8. **Slack thread scope** — Replies respect existing thread context (`thread_ts` preserved). Broadcast to a thread root produces thread replies from all bots.
+
+9. **Trusted bot sends `@here`** — A trusted agent (matched via `bot_id` in `TRUSTED_AGENT_BOT_IDS`) that sends `<!here> gate status` is handled by the trusted-bot block (line 644), which checks for `{prefix} ` at the start of the raw text. Since the text starts with `<!here>` — not the prefix — it does not match, and the handler returns silently at line 668. The message never reaches the broadcast block (line 689). Resolved: correct behaviour — trusted bots should address a specific bot by prefix, not broadcast. Broadcast mentions in trusted-bot messages are safely ignored.
+
+---
+
+## GateSec R1 Findings
+
+> Round 1 security review — 2026-03-15
+
+All 10 spec claims verified against `src/platform/slack.py` at commit `c3fdae9`. Line numbers, function names, regex patterns, and control-flow ordering are accurate.
+
+| ID | Severity | Finding | Status |
+|----|----------|---------|--------|
+| F1 | 🟢 Non-blocking | Trusted-bot broadcast edge case undocumented — `<!here> gate status` from a trusted bot is silently dropped because the trusted-bot handler (line 644) checks for prefix at text start, not after mention stripping. Added to Edge Cases §9. | Resolved inline |
+
+**Security checklist:**
+
+- ✅ **Auth guard ordering** — `_is_allowed()` at line 671 runs before broadcast block at line 689. Unauthorised broadcasts are dropped with audit record.
+- ✅ **PREFIX_ONLY bypass semantics** — Broadcast bypass mirrors `@mention` bypass (line 711). Both represent explicit user-addressed messages; treating them as unprefixed would be wrong.
+- ✅ **Broadcast input path safety** — Stripped text enters the same `_dispatch()` / `_run_ai_pipeline()` paths as normal messages. Destructive commands (`gate run rm -rf`) still trigger confirmation dialogs via `_dispatch("run", …)`.
+- ✅ **ReDoS resistance** — `r"<!(channel|here|everyone)>"` is simple alternation with no nested quantifiers. No risk.
+- ✅ **Re-broadcast loop prevention** — `_post_delegations()` at line 445 strips `<!here>` / `<!channel>` / `<!everyone>` from outbound AI text, preventing a bot's response from triggering other bots.
+- ✅ **Empty/whitespace injection** — `.strip()` + `if not broadcast_text: return` (lines 690–692) blocks empty and whitespace-only payloads.
+- ✅ **Thread context preservation** — `thread_ts` passed in all 3 call sites within the broadcast block (lines 700, 703, 707).
+- ✅ **No new secrets, endpoints, or subprocess paths** — Slack-only feature; no config changes; no new attack surface.
 
 ---
 
