@@ -3,26 +3,33 @@ import os
 from pathlib import Path
 
 from src.ai.adapter import AICLIBackend
-from src.config import AIConfig, CopilotAIConfig, CodexAIConfig, DirectAIConfig, REPO_DIR  # noqa: F401
+from src.config import AIConfig, REPO_DIR
+from src._loader import _module_file_exists
 
 logger = logging.getLogger(__name__)
 
 
-def create_backend(ai: AIConfig) -> AICLIBackend:
-    if ai.ai_cli == "copilot":
-        from src.ai.copilot import CopilotBackend
-        return CopilotBackend(
-            model=ai.copilot.copilot_model or ai.ai_model,
-            opts=ai.ai_cli_opts,
-            skills_dirs=ai.copilot.copilot_skills_dirs,
-        )
+def _load_backends() -> None:
+    """Import each backend module so its @backend_registry.register() decorator fires."""
+    import importlib
+    import importlib.util
 
-    if ai.ai_cli == "codex":
-        from src.ai.codex import CodexBackend
-        # CODEX_API_KEY / CODEX_MODEL take precedence; fall back to shared AI_API_KEY / AI_MODEL
-        codex_key = ai.codex.codex_api_key or ai.ai_api_key
-        codex_model = ai.codex.codex_model or ai.ai_model or "o3"
-        return CodexBackend(api_key=codex_key, model=codex_model, opts=ai.ai_cli_opts)
+    for mod in ("src.ai.copilot", "src.ai.codex", "src.ai.direct"):
+        rel_path = mod.replace(".", "/") + ".py"
+        if importlib.util.find_spec(mod) is None and not _module_file_exists(rel_path):
+            continue
+        try:
+            importlib.import_module(mod)
+        except ImportError as exc:
+            raise ImportError(
+                f"Failed to import backend module '{mod}'. "
+                f"Is the required package installed? Original error: {exc}"
+            ) from exc
+
+
+def create_backend(ai: AIConfig) -> AICLIBackend:
+    _load_backends()
+    from src.registry import backend_registry
 
     if ai.ai_cli == "api":
         if ai.ai_cli_opts:
@@ -42,13 +49,31 @@ def create_backend(ai: AIConfig) -> AICLIBackend:
                 system_prompt = Path(resolved).read_text()
             except OSError as exc:
                 logger.warning("Could not read SYSTEM_PROMPT_FILE %r: %s", ai.direct.system_prompt_file, exc)
-        from src.ai.direct import DirectAPIBackend
-        return DirectAPIBackend(
+        return backend_registry.create(
+            "api",
             provider=ai.direct.ai_provider,
             api_key=ai.ai_api_key,
             model=ai.ai_model,
             base_url=ai.direct.ai_base_url,
             system_prompt=system_prompt,
+        )
+
+    if ai.ai_cli == "copilot":
+        return backend_registry.create(
+            "copilot",
+            model=ai.copilot.copilot_model or ai.ai_model,
+            opts=ai.ai_cli_opts,
+            skills_dirs=ai.copilot.copilot_skills_dirs,
+        )
+
+    if ai.ai_cli == "codex":
+        codex_key = ai.codex.codex_api_key or ai.ai_api_key
+        codex_model = ai.codex.codex_model or ai.ai_model or "o3"
+        return backend_registry.create(
+            "codex",
+            api_key=codex_key,
+            model=codex_model,
+            opts=ai.ai_cli_opts,
         )
 
     raise ValueError(f"Unknown AI_CLI value: {ai.ai_cli!r}")

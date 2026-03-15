@@ -228,6 +228,8 @@ environment:
 | Variable | Default | Description |
 |---|---|---|
 | `AUDIT_ENABLED` | `true` | Set `false` to disable audit logging to `/data/audit.db` |
+| `AUDIT_BACKEND` | `sqlite` | Audit log backend: `sqlite` (default) or `null` (disabled in-process) |
+| `STORAGE_BACKEND` | `sqlite` | Conversation history backend: `sqlite` (default) or `memory` (in-process, non-persistent) |
 
 ### Optional
 

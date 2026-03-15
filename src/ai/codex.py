@@ -5,9 +5,12 @@ from collections.abc import AsyncGenerator
 
 from src.ai.adapter import AICLIBackend, SubprocessMixin
 from src.config import REPO_DIR  # noqa: F401 — test seam for monkeypatching
+from src.registry import backend_registry
+
 logger = logging.getLogger(__name__)
 
 
+@backend_registry.register("codex", force=True)
 class CodexBackend(SubprocessMixin, AICLIBackend):
     """Stateful backend that delegates to the Codex CLI subprocess."""
 

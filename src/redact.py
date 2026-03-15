@@ -4,10 +4,16 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from src.config import Settings
+
+
+@runtime_checkable
+class SecretProvider(Protocol):
+    """Implemented by config sub-classes that hold secret values."""
+    def secret_values(self) -> list[str]: ...
 
 logger = logging.getLogger(__name__)
 
@@ -45,36 +51,26 @@ class SecretRedactor:
             )
 
     @staticmethod
-    def _collect_secrets(settings: Settings) -> list[str]:
-        """Gather non-empty secret values from all config sub-objects."""
-        candidates: list[str] = []
-        try:
-            candidates.append(settings.telegram.bot_token)
-        except AttributeError:
-            pass
-        try:
-            candidates.append(settings.slack.slack_bot_token)
-            candidates.append(settings.slack.slack_app_token)
-        except AttributeError:
-            pass
-        try:
-            candidates.append(settings.github.github_repo_token)
-        except AttributeError:
-            pass
-        try:
-            candidates.append(settings.ai.ai_api_key)
-        except AttributeError:
-            pass
-        try:
-            candidates.append(settings.ai.codex.codex_api_key)
-        except AttributeError:
-            pass
-        try:
-            candidates.append(settings.voice.whisper_api_key)
-        except AttributeError:
-            pass
+    def _collect_secrets(settings: "Settings") -> list[str]:
+        """Gather non-empty secret values from all config sub-objects via SecretProvider protocol."""
+        result: list[str] = []
+        # Use class-level model_fields (Pydantic v2 idiomatic). Falls back to a known
+        # list of sub-config attribute names for duck-typed objects (e.g. MagicMock in tests).
+        _KNOWN_SUBCONFIGS = ("telegram", "slack", "github", "bot", "ai", "voice", "audit", "storage")
+        fields: dict = getattr(type(settings), "model_fields", {})
+        attr_names = list(fields.keys()) if fields else list(_KNOWN_SUBCONFIGS)
+        for field_name in attr_names:
+            attr = getattr(settings, field_name, None)
+            secret_fn = getattr(attr, "secret_values", None)
+            if callable(secret_fn):
+                try:
+                    vals = secret_fn()
+                    if isinstance(vals, list):
+                        result.extend(vals)
+                except Exception:
+                    pass
         # Only include values that are long enough to avoid false-positive matches
-        return [v for v in candidates if v and len(v) >= 8]
+        return [v for v in result if v and len(v) >= 8]
 
     def redact(self, text: str) -> str:
         """Return text with secrets replaced by [REDACTED]."""

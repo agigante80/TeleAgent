@@ -204,6 +204,8 @@ class TestCmdDiffSanitization:
         settings.ai.ai_api_key = "sk-test"
         settings.github = MagicMock(spec=GitHubConfig)
         settings.github.github_repo_token = ""
+        settings.github.github_repo = ""
+        settings.github.branch = "develop"
         settings.voice = MagicMock(spec=VoiceConfig)
         settings.voice.whisper_provider = "none"
         settings.voice.whisper_api_key = ""
@@ -269,6 +271,8 @@ class TestCmdDiffSanitization:
         settings.ai.ai_api_key = "sk-test"
         settings.github = MagicMock(spec=GitHubConfig)
         settings.github.github_repo_token = ""
+        settings.github.github_repo = ""
+        settings.github.branch = "develop"
         settings.voice = MagicMock(spec=VoiceConfig)
         settings.voice.whisper_provider = "none"
         settings.voice.whisper_api_key = ""

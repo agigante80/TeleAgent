@@ -146,3 +146,29 @@ class TestRedactGitCommitCmd:
         secret = "ghp_" + "A" * 36
         cmd = f'git commit -m "token {secret}"'
         assert redactor.redact_git_commit_cmd(cmd) == cmd
+
+
+class TestSecretProvider:
+    def test_telegram_config_satisfies_protocol(self):
+        from src.redact import SecretProvider
+        from src.config import TelegramConfig
+        cfg = TelegramConfig()
+        assert isinstance(cfg, SecretProvider)
+
+    def test_collect_secrets_via_protocol(self):
+        """_collect_secrets picks up values via secret_values() on each sub-config."""
+        from src.config import Settings, TelegramConfig, BotConfig
+        s = Settings()
+        # Inject a real telegram config with a token
+        s.telegram = TelegramConfig(TG_BOT_TOKEN="ghp_" + "A" * 36)
+        secrets = SecretRedactor._collect_secrets(s)
+        assert "ghp_" + "A" * 36 in secrets
+
+    def test_new_config_field_no_redact_edit(self, monkeypatch):
+        """Adding a field to secret_values() on sub-config works without touching redact.py."""
+        from src.config import GitHubConfig, Settings
+        long_token = "ghp_" + "B" * 36
+        monkeypatch.setenv("GITHUB_REPO_TOKEN", long_token)
+        s = Settings()
+        secrets = SecretRedactor._collect_secrets(s)
+        assert long_token in secrets

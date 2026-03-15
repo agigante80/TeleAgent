@@ -16,6 +16,8 @@ from typing import Any
 
 import aiosqlite
 
+from src.registry import audit_registry
+
 logger = logging.getLogger(__name__)
 
 
@@ -90,6 +92,7 @@ class AuditLog(ABC):
         ...
 
 
+@audit_registry.register("sqlite", force=True)
 class SQLiteAuditLog(AuditLog):
     """Default SQLite-backed audit log.
 
@@ -180,6 +183,7 @@ class SQLiteAuditLog(AuditLog):
             return []
 
 
+@audit_registry.register("null", force=True)
 class NullAuditLog(AuditLog):
     """No-op audit log used when ``AUDIT_ENABLED=false``."""
 

@@ -2,10 +2,12 @@ import logging
 from collections.abc import AsyncGenerator
 
 from src.ai.adapter import AICLIBackend
+from src.registry import backend_registry
 
 logger = logging.getLogger(__name__)
 
 
+@backend_registry.register("api", force=True)
 class DirectAPIBackend(AICLIBackend):
     is_stateful = True  # self._messages maintains native chat history
 

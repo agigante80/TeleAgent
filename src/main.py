@@ -8,12 +8,15 @@ import time
 
 from src.config import Settings
 from src.ai.factory import create_backend
-from src import repo, runtime
+from src import runtime
 from src.config import REPO_DIR, DB_PATH, AUDIT_DB_PATH
-from src.audit import SQLiteAuditLog, NullAuditLog, AuditLog
+from src.audit import AuditLog
 from src.history import SQLiteStorage
 from src.logging_setup import configure_logging
 from src.ready_msg import build_ready_message
+from src._loader import _module_file_exists
+from src.services import Services, ShellService, RepoService
+from src.registry import storage_registry, audit_registry, platform_registry
 logger = logging.getLogger(__name__)
 
 _HEALTH_FILE = pathlib.Path("/tmp/healthy")
@@ -61,6 +64,24 @@ def _validate_config(settings: Settings) -> None:
                 "SLACK_CHANNEL_ID is required when PLATFORM=slack — "
                 "set it to the channel where the bot should operate"
             )
+
+
+def _load_platforms() -> None:
+    """Import platform modules so their @platform_registry.register() decorators fire."""
+    import importlib
+    import importlib.util
+
+    for mod in ("src.bot", "src.platform.slack"):
+        rel_path = mod.replace(".", "/") + ".py"
+        if importlib.util.find_spec(mod) is None and not _module_file_exists(rel_path):
+            continue
+        try:
+            importlib.import_module(mod)
+        except ImportError as exc:
+            raise ImportError(
+                f"Failed to import platform module '{mod}'. "
+                f"Is the required package installed? Original error: {exc}"
+            ) from exc
 
 
 async def _startup_telegram(settings: Settings, backend, storage: SQLiteStorage, start_time: float, audit: AuditLog) -> None:
@@ -174,6 +195,7 @@ async def _install_commit_msg_hook() -> None:
 async def startup(settings: Settings) -> None:
     start_time = time.time()
 
+    from src import repo
     token = settings.github.github_repo_token
     logger.info("Cloning repository…")
     await repo.clone(
@@ -189,27 +211,44 @@ async def startup(settings: Settings) -> None:
     logger.info(dep_result)
 
     logger.info("Initializing conversation history DB…")
-    storage = SQLiteStorage(DB_PATH)
+    storage_backend = getattr(settings.storage, "storage_backend", "sqlite")
+    storage = storage_registry.create(storage_backend, DB_PATH)
     await storage.init()
 
     logger.info("Initializing audit log…")
     audit: AuditLog
-    if settings.audit.audit_enabled:
-        audit = SQLiteAuditLog(AUDIT_DB_PATH)
-        await audit.init()
+    audit_enabled = getattr(settings.audit, "audit_enabled", True)
+    audit_backend = "null" if not audit_enabled else getattr(settings.storage, "audit_backend", "sqlite")
+    audit = audit_registry.create(audit_backend, AUDIT_DB_PATH)
+    await audit.init()
+    if audit_enabled:
         logger.info("Audit log enabled at %s", AUDIT_DB_PATH)
     else:
-        audit = NullAuditLog()
         logger.info("Audit log disabled (AUDIT_ENABLED=false)")
 
     logger.info("Initializing AI backend: %s", settings.ai.ai_cli)
     backend = create_backend(settings.ai)
 
+    from src.redact import SecretRedactor
+    redactor = SecretRedactor(settings)
+    services = Services(
+        shell=ShellService(max_chars=settings.bot.max_output_chars, redactor=redactor),
+        repo=RepoService(
+            token=settings.github.github_repo_token,
+            repo_name=settings.github.github_repo,
+            branch=settings.github.branch,
+        ),
+        redactor=redactor,
+        transcriber=None,
+    )
+
     logger.info("Starting platform: %s", settings.platform)
-    if settings.platform == "slack":
-        await _startup_slack(settings, backend, storage, start_time, audit)
-    else:
-        await _startup_telegram(settings, backend, storage, start_time, audit)
+    _load_platforms()
+    adapter = platform_registry.create(
+        settings.platform,
+        settings, backend, storage, services, start_time, audit,
+    )
+    await adapter.start()
 
 
 def main() -> None:

@@ -358,14 +358,14 @@ class TestCmdRun:
         client = _make_client()
         with patch("src.executor.run_shell", AsyncMock(return_value="result")), \
              patch("src.executor.is_destructive", return_value=False):
-            await bot._cmd_run(["echo", "hello"], say, client, "C12345")
+            await bot.cmd_run(["echo", "hello"], say, client, "C12345")
         assert client.chat_postMessage.call_count == 2  # "⏳ Running…" + result
 
     async def test_run_no_args_shows_usage(self):
         bot = _make_bot()
         say = _make_say()
         client = _make_client()
-        await bot._cmd_run([], say, client, "C12345")
+        await bot.cmd_run([], say, client, "C12345")
         client.chat_postMessage.assert_awaited_once()
         assert "Usage" in client.chat_postMessage.call_args[1]["text"]
 
@@ -375,7 +375,7 @@ class TestCmdRun:
         client = _make_client()
         with patch("src.executor.is_destructive", return_value=True), \
              patch("src.executor.is_exempt", return_value=False):
-            await bot._cmd_run(["git", "push", "--force"], say, client, "C12345")
+            await bot.cmd_run(["git", "push", "--force"], say, client, "C12345")
         # Should post Block Kit message, not run
         client.chat_postMessage.assert_awaited_once()
         assert ("C12345", client.chat_postMessage.call_args[1]["ts"]
@@ -419,7 +419,7 @@ class TestCmdStatus:
         bot = _make_bot()
         say = _make_say()
         client = _make_client()
-        await bot._cmd_status([], say, client, "C12345")
+        await bot.cmd_status([], say, client, "C12345")
         text = client.chat_postMessage.call_args[1]["text"]
         assert "idle" in text.lower()
 
@@ -429,7 +429,7 @@ class TestCmdStatus:
         bot._active_ai["some long prompt"] = time.time()
         say = _make_say()
         client = _make_client()
-        await bot._cmd_status([], say, client, "C12345")
+        await bot.cmd_status([], say, client, "C12345")
         text = client.chat_postMessage.call_args[1]["text"]
         assert "processing" in text.lower()
 
@@ -441,7 +441,7 @@ class TestCmdConfirm:
         bot = _make_bot(_make_settings(confirm_destructive=True))
         say = _make_say()
         client = _make_client()
-        await bot._cmd_confirm(["off"], say, client, "C12345")
+        await bot.cmd_confirm(["off"], say, client, "C12345")
         assert bot._confirm_destructive is False
 
     async def test_toggle_on(self):
@@ -449,14 +449,14 @@ class TestCmdConfirm:
         bot._confirm_destructive = False
         say = _make_say()
         client = _make_client()
-        await bot._cmd_confirm(["on"], say, client, "C12345")
+        await bot.cmd_confirm(["on"], say, client, "C12345")
         assert bot._confirm_destructive is True
 
     async def test_query_state(self):
         bot = _make_bot()
         say = _make_say()
         client = _make_client()
-        await bot._cmd_confirm([], say, client, "C12345")
+        await bot.cmd_confirm([], say, client, "C12345")
         text = client.chat_postMessage.call_args[1]["text"]
         assert "enabled" in text.lower() or "disabled" in text.lower()
 
@@ -1026,7 +1026,7 @@ class TestDispatchUserIdAttribution:
         async def fake_handler(args, say, client, channel, *, thread_ts=None, user_id=None):
             called_with["user_id"] = user_id
 
-        bot._cmd_sync = fake_handler
+        bot.cmd_sync = fake_handler
         say = _make_say()
         client = _make_client()
         await bot._dispatch("sync", [], say, client, "C1", user_id="U99")
