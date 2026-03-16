@@ -304,6 +304,16 @@ class TestValidateShellCommand:
         result = validate_shell_command("sed -ni 's/x/y/' file.txt", allowlist=[], readonly=True)
         assert result is not None and "Blocked" in result
 
+    def test_sed_long_in_place_blocked_in_readonly(self):
+        """`sed --in-place` long-form must be blocked (previously bypassed the short-flag check)."""
+        result = validate_shell_command("sed --in-place 's/x/y/' file.txt", allowlist=[], readonly=True)
+        assert result is not None and "Blocked" in result and "in-place" in result
+
+    def test_sed_long_in_place_suffix_blocked_in_readonly(self):
+        """`sed --in-place=.bak` long-form with suffix must also be blocked."""
+        result = validate_shell_command("sed --in-place=.bak 's/x/y/' file.txt", allowlist=[], readonly=True)
+        assert result is not None and "Blocked" in result and "in-place" in result
+
     # ── 6. Removed interpreters not in _READONLY_CMDS ────────────────────
 
     def test_python3_blocked_in_readonly(self):

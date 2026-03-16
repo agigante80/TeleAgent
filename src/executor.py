@@ -106,12 +106,17 @@ def validate_shell_command(cmd: str, allowlist: list[str], readonly: bool) -> st
             if subcmd not in _READONLY_GIT_SUBCMDS:
                 return f"🚫 Blocked: `git {subcmd}` is not permitted in read-only mode."
         if token == "sed":
-            # Block in-place writes: -i, -i.bak, and short-flag bundles containing 'i' (-ni, etc.)
+            # Block in-place writes: -i, -i.bak, short-flag bundles (-ni), and
+            # long-form --in-place / --in-place=SUFFIX.
             try:
                 parts = shlex.split(cmd)
             except ValueError:
                 return "🚫 Blocked: unable to parse sed arguments."
             for arg in parts[1:]:
+                if arg == "--":
+                    break
+                if arg.startswith("--in-place"):
+                    return "🚫 Blocked: `sed --in-place` (in-place write) is not permitted in read-only mode."
                 if arg.startswith("--"):
                     continue
                 if arg.startswith("-") and "i" in arg[1:]:
