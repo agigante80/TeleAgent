@@ -252,6 +252,7 @@ class GeminiBackend(SubprocessMixin, AICLIBackend):
 | `src/ai/gemini.py` | **New** — `GeminiBackend` class (see above) | ~75 lines |
 | `src/ai/factory.py` | Add `gemini` branch + `_load_backends()` entry | ~10 lines |
 | `src/config.py` | Extend `AIConfig`: `ai_cli` Literal + `gemini_api_key` field + `secret_values()` | 4 lines |
+| `src/main.py` | Add `GEMINI_API_KEY` non-empty check inside `_validate_config()` when `AI_CLI=gemini` | ~5 lines |
 | `src/executor.py` | Add `GEMINI_API_KEY`, `GOOGLE_API_KEY` to `_SECRET_ENV_KEYS` | 2 lines |
 | `src/redact.py` | Add Google API key regex (`AIza...`) to `_SECRET_PATTERNS` | 1 line |
 | `Dockerfile` | Add `npm install -g @google/gemini-cli` (Node.js **already present**) | 1 line |
@@ -259,6 +260,8 @@ class GeminiBackend(SubprocessMixin, AICLIBackend):
 | `tests/unit/test_gemini_backend.py` | **New** — unit tests (see below) | ~80 lines |
 | `tests/contract/test_backends_contract.py` | Add `GeminiBackend` to `ALL_BACKENDS` | ~5 lines |
 | `tests/integration/test_factory.py` | Add factory test for `AI_CLI=gemini` | ~10 lines |
+
+> **GateCode note**: `src/main.py` was absent from this table in the original draft. The `_validate_config()` change is explicitly called out in Architecture Notes and the Acceptance Criteria; it must be listed here so the implementer does not miss it.
 
 ---
 
@@ -383,23 +386,28 @@ Two changes are required:
 
 **2. Add `src.ai.gemini` to `_load_backends()`** so the registry decorator fires:
 
-```python
-# Before:
-def _load_backends() -> None:
-    _module_file_exists("src.ai.copilot") and __import__("src.ai.copilot")
-    _module_file_exists("src.ai.codex") and __import__("src.ai.codex")
-    _module_file_exists("src.ai.direct") and __import__("src.ai.direct")
+> ⚠️ **GateCode note**: The `_load_backends()` implementation in `factory.py` has evolved since earlier backends were added. It now uses `importlib.import_module()` with structured error handling (not the old `and __import__()` shorthand shown in some older examples). Use the pattern below, which matches the live code:
 
-# After:
-def _load_backends() -> None:
-    _module_file_exists("src.ai.copilot") and __import__("src.ai.copilot")
-    _module_file_exists("src.ai.codex") and __import__("src.ai.codex")
-    _module_file_exists("src.ai.direct") and __import__("src.ai.direct")
-    _module_file_exists("src.ai.gemini") and __import__("src.ai.gemini")   # ← add
+```python
+# Before (existing loop body in factory.py):
+for mod in ("src.ai.copilot", "src.ai.codex", "src.ai.direct"):
+    rel_path = mod.replace(".", "/") + ".py"
+    if importlib.util.find_spec(mod) is None and not _module_file_exists(rel_path):
+        continue
+    try:
+        importlib.import_module(mod)
+    except ImportError as exc:
+        raise ImportError(...)  from exc
+
+# After — extend the tuple to include the new module:
+for mod in ("src.ai.copilot", "src.ai.codex", "src.ai.direct", "src.ai.gemini"):
+    ...  # rest of loop body unchanged
 ```
 
 Without this, the `@backend_registry.register("gemini")` decorator in `gemini.py`
 never fires and `backend_registry.create("gemini", ...)` raises `KeyError`.
+
+> **Future-modularity-debt (pre-Milestone 2.16)**: adding `src.ai.gemini` to `_load_backends()` is a direct edit to `factory.py`. After Milestone 2.16 (modular plugin architecture), backends should self-register without any `factory.py` edit. Flag for refactor in that milestone; do not block this feature on it.
 
 ### Step 5 — `Dockerfile`
 
@@ -823,11 +831,11 @@ Add a commented-out Gemini block:
 
 ### `docs/roadmap.md`
 
-This feature is not currently listed. Add it to the Features table:
+> **GateCode note**: This feature is *already listed* in `docs/roadmap.md` at milestone **2.6** (not 2.10 as this doc previously claimed). No new row needs to be added. After merge to `main`, update the existing row at milestone 2.6 to mark it done (✅):
+
 ```markdown
-| 2.10 | Gemini CLI backend — `AI_CLI=gemini` using Google Gemini 2.5 Pro | [→ features/gemini-cli-backend.md](features/gemini-cli-backend.md) |
+| 2.6 | ✅ Gemini CLI backend — `AI_CLI=gemini` using Google Gemini 2.5 Pro (1M token context) | [→ features/gemini-cli-backend.md](features/gemini-cli-backend.md) |
 ```
-After merge to `main`, mark it done (✅).
 
 ### `docs/features/gemini-cli-backend.md`
 
@@ -853,10 +861,10 @@ Consult `docs/versioning.md` for the full decision guide. Quick reference:
 
 ## Roadmap Update
 
-When this feature is complete, update `docs/roadmap.md`:
+When this feature is complete, mark the *existing* milestone 2.6 row in `docs/roadmap.md` done:
 
 ```markdown
-| 2.10 | ✅ Gemini CLI backend — `AI_CLI=gemini` using Google Gemini 2.5 Pro (1M token context) | [→ features/gemini-cli-backend.md](features/gemini-cli-backend.md) |
+| 2.6 | ✅ Gemini CLI backend — `AI_CLI=gemini` using Google Gemini 2.5 Pro (1M token context) | [→ features/gemini-cli-backend.md](features/gemini-cli-backend.md) |
 ```
 
 Potential stretch goal: streaming progressiveness verification (Open Questions item 4) — if Gemini CLI buffers output rather than streaming progressively, a `stream()`-via-`send()` fallback mode may be worth documenting.
@@ -891,3 +899,15 @@ Potential stretch goal: streaming progressiveness verification (Open Questions i
 - [ ] Edge cases in the Open Questions section above are resolved and either handled or documented.
 - [ ] PR is merged to `develop` first; CI is green; then merged to `main`.
 
+
+---
+
+## Team Review
+
+| Reviewer | Round | Score | Date       | Notes |
+|----------|-------|-------|------------|-------|
+| GateCode | 1     | 9/10  | 2026-03-16 | Added `src/main.py` to Files table; corrected `_load_backends()` code example to match live importlib pattern; corrected roadmap milestone reference from 2.10 → 2.6; flagged future-modularity-debt on factory.py edit |
+| GateSec  | 1     | -/10  | -          | Pending |
+| GateDocs | 1     | -/10  | -          | Pending |
+
+**Status**: 🔄 In review — round 1
