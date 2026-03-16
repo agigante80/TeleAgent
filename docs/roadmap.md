@@ -34,6 +34,7 @@ If adding a new item, create a feature document using `docs/features/_template.m
 | 2.13 | Lightweight web dashboard — read-only HTTP status page in the container | [→ features/web-dashboard.md](features/web-dashboard.md) |
 | 2.14 | Prometheus metrics endpoint — expose request/error/latency metrics via `/metrics` | [→ features/metrics-endpoint.md](features/metrics-endpoint.md) |
 | 2.15 | Remote control fork project — `gate fork` subcommands for cross-repo cherry-pick workflows | [→ features/remote-control-fork-project.md](features/remote-control-fork-project.md) |
+| 2.16 | Supply-chain hardening — `detect-secrets` CI gate + dependency pinning | [→ features/supply-chain-hardening.md](features/supply-chain-hardening.md) |
 
 ---
 
