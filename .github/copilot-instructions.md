@@ -75,7 +75,7 @@ AgentGate is an async Python bot (Telegram **or** Slack) that acts as a gateway 
 
 **Dependency auto-install** (`src/runtime.py`): detects `package.json`, `pyproject.toml`, `requirements.txt`, `go.mod` and runs the appropriate install command. Uses content-hash sentinel files at `/data/.install_sentinels/` to skip reinstalls when manifests haven't changed.
 
-**Voice transcription** (`src/transcriber.py`): `Transcriber` ABC with `NullTranscriber` (default, disabled) and `OpenAITranscriber`. `create_transcriber()` factory reads `VoiceConfig`. `WHISPER_API_KEY` falls back to `AI_API_KEY` when `WHISPER_PROVIDER=openai`.
+**Voice transcription** (`src/transcriber.py`): `Transcriber` ABC with `NullTranscriber` (default, disabled) and `OpenAITranscriber`. `create_transcriber()` factory reads `VoiceConfig`. `WHISPER_API_KEY` is required (no fallback) when `WHISPER_PROVIDER=openai`; `AI_API_KEY` is no longer accepted as a substitute (removed in v1.1.0).
 
 **Skills / agent personas** (`skills/`): markdown files that define specialized agent roles (`dev-agent.md`, `docs-agent.md`, `sec-agent.md`). Loaded via `SYSTEM_PROMPT_FILE` or `COPILOT_SKILLS_DIRS`. `SYSTEM_PROMPT_FILE` must **not** point inside `REPO_DIR` (enforced at startup in `factory.py`) — mount it via a separate Docker volume. `TRUSTED_AGENT_BOT_IDS` lists Slack bot IDs (or `Name:prefix` pairs) that bypass the normal user filter for agent-to-agent messaging.
 
