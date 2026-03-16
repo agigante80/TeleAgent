@@ -83,16 +83,58 @@ Never mix types in the same document.
 - Feature docs must have a "Files to Change" section
 - How-to guides must have a "Verify" step
 
-## Agent Delegation
+## Feature Review
 
-**Feature review round-trip (critical):** After completing a feature doc review (inline edits, Team Review table update, commit), always close with a `[DELEGATE: dev ...]` block so GateCode is notified automatically — never leave the chain waiting for the user to relay your findings manually.
+**Trigger phrase:** When a user says `docs Please start a feature review of docs/features/<file>.md`
+(or any equivalent phrasing asking you to start, initiate, or kick off a review), you review
+first, then delegate to the next agent in the canonical chain. Always read
+`docs/guides/feature-review-process.md` for the authoritative protocol before starting.
+
+**Canonical chain (fixed order, every round):**
 
 ```
-[DELEGATE: dev GateDocs R<N> complete on `docs/features/<feature>.md`.
+GateCode (dev) → GateSec (sec) → GateDocs (docs)
+```
+
+When triggered via `docs`, the chain wraps: docs → dev → sec → docs, and all three agents
+still participate. GateDocs is always the final approval decision-maker.
+
+**Per-turn protocol (your turn as GateDocs — as last reviewer in the chain):**
+
+1. Sync to `develop`: `git fetch origin develop && git reset --hard origin/develop`
+2. Read the doc: `docs/features/<feature>.md`
+3. Edit the doc inline — fill gaps, improve clarity, fix inaccuracies
+4. Update your row in the Team Review table
+5. Commit and push to `develop` — **mandatory before posting outcome**
+6. If all scores ≥ 9: mark the doc Approved and post approval to the channel (no DELEGATE)
+7. If any score < 9: list blocking gaps in the doc, add round N+1 rows, and delegate to dev
+
+**Delegation templates:**
+
+*When all scores ≥ 9 — post to channel (no DELEGATE block needed):*
+```
+✅ `docs/features/<feature>.md` is approved (round <N>).
+Scores: GateCode <X>/10 | GateSec <Y>/10 | GateDocs <Z>/10.
+Ready to implement. Assign to a milestone or ask me to open the implementation PR.
+```
+
+*When re-review needed (GateDocs → GateCode):*
+```
+[DELEGATE: dev Feature doc re-review of `docs/features/<feature>.md` — round <N+1>.
 Branch: develop | Commit: <SHA>
-Score: <X>/10. Findings: <one-line summary or "no blockers found">.
-Please verify your implementation matches and confirm R<N> done.]
+Round <N> scores: GateCode <X>/10 | GateSec <Y>/10 | GateDocs <Z>/10.
+See doc for blocking gaps (do not list specifics here). Please sync to that commit, address the
+gaps, update your round <N+1> row in the Team Review table, commit, and DELEGATE to sec.
+See `docs/guides/feature-review-process.md` for the full protocol.]
 ```
+
+**Critical delegation rules:**
+
+- **One `[DELEGATE: …]` block per response — never two.** The chain is always sequential.
+- **Always include `Branch: develop | Commit: <SHA>`** in the delegation message.
+- **Never list specific security gap details in delegation messages** — reference the doc path;
+  let the receiving agent read the doc.
+- The block must be the very last thing in your response.
 
 When a guide or spec requires implementing code changes, append at the end:
 

@@ -57,6 +57,9 @@ dev Please start a feature review of docs/features/my-feature.md
 That agent becomes the first reviewer and the chain starts automatically. No other manual
 steps are required until the final approval (or a re-review request) is posted back here.
 
+> _Triggered via `sec` or `docs` instead? See **Review Order** below — the chain wraps
+> so all three agents still participate and GateDocs still makes the final call._
+
 ---
 
 ## Review Order
@@ -337,10 +340,10 @@ does not replace the `[DELEGATE]` handoff or the Team Review table.
 |----------|-------|-------|------------|-------|
 | GateCode | 1     | 9/10  | 2026-03-14 | Fixed template table placeholders, clarified wrap-around order |
 | GateSec  | 1     | 9/10  | 2026-03-14 | Added security scoring floor, SecretRedactor coverage rule, threat model requirement |
-| GateDocs | 1     | -/10  | -          | Pending |
+| GateDocs | 1     | 9/10  | 2026-03-16 | Added trigger→chain pointer in "How to Trigger"; guide is authoritative and complete |
 
-**Status**: ⏳ Pending review
-**Approved**: No — requires all scores ≥ 9/10 in the same round
+**Status**: ✅ Approved — round 1, all scores ≥ 9
+**Approved**: Yes — ready to use
 
 ---
 - The reviewing agent is responsible for making the doc _better_, not just scoring it.

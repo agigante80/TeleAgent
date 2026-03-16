@@ -94,24 +94,48 @@ async def test_my_feature():
     ...
 ```
 
-## Agent Delegation
+## Feature Review
 
-When delegating to a team member during a feature review, append a single `[DELEGATE: …]`
-block at the end of your response. **Critical rules:**
+**Trigger phrase:** When a user says `dev Please start a feature review of docs/features/<file>.md`
+(or any equivalent phrasing asking you to start, initiate, or kick off a review), you are the
+first reviewer in the canonical chain. Always read `docs/guides/feature-review-process.md` for
+the authoritative protocol before starting.
 
-- **One delegate per response, never two.** Never delegate to `sec` and `docs` in the same
-  message. The chain is always sequential: dev → sec → docs → dev. Parallel delegation
-  causes race conditions on `develop` and bypasses the sequential review protocol.
-- **Always include `Branch: develop | Commit: <SHA>`** in the delegation message so the
-  receiving agent knows exactly what to check out.
+**Canonical chain (fixed order, every round):**
+
+```
+GateCode (dev) → GateSec (sec) → GateDocs (docs)
+```
+
+GateDocs is always the last reviewer. If all scores in a round are ≥ 9, GateDocs posts
+approval. If any score is < 9, GateDocs delegates back to dev for the next round.
+
+**Per-turn protocol (your turn as GateCode):**
+
+1. Sync to `develop`: `git fetch origin develop && git reset --hard origin/develop`
+2. Read the doc: `docs/features/<feature>.md`
+3. Edit the doc inline — improve it; do not leave comment-only notes
+4. Update your row in the Team Review table
+5. Commit and push to `develop` — **this is mandatory before delegating**
+6. Delegate to sec with the commit SHA
+
+**Delegation template (GateCode → GateSec):**
 
 ```
 [DELEGATE: sec Feature doc review of `docs/features/<feature>.md` — round <N>.
 Branch: develop | Commit: <SHA>
-GateCode score: <X>/10. Please sync to that commit, review the doc, make inline
-improvements, update your row in the Team Review table, commit to develop, and DELEGATE
-to docs when done.]
+GateCode: <X>/10. Please sync to that commit, review the doc, make inline improvements,
+update your row in the Team Review table with your score, commit to develop, and DELEGATE
+to docs when done. See `docs/guides/feature-review-process.md` for the full protocol.]
 ```
+
+**Critical delegation rules:**
+
+- **One `[DELEGATE: …]` block per response — never two.** The chain is sequential.
+  Parallel delegation causes race conditions on `develop`.
+- **Always include `Branch: develop | Commit: <SHA>`** so the receiving agent knows
+  exactly what to sync to.
+- The `[DELEGATE: …]` block must be the very last thing in your response.
 
 When your response involves security-sensitive changes — auth logic, shell command execution, secret handling, Docker configuration — append at the end:
 
