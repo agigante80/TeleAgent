@@ -85,8 +85,12 @@ class CopilotAIConfig(BaseSettings):
 
     model_config = SettingsConfigDict(extra="ignore")
 
-    copilot_model: str = ""        # COPILOT_MODEL — overrides AI_MODEL for the Copilot CLI; empty = use AI_MODEL
-    copilot_skills_dirs: str = ""  # COPILOT_SKILLS_DIRS
+    copilot_model: str = ""          # COPILOT_MODEL — overrides AI_MODEL for the Copilot CLI; empty = use AI_MODEL
+    copilot_github_token: str = ""   # COPILOT_GITHUB_TOKEN — re-injected into Copilot CLI subprocess for auth
+    copilot_skills_dirs: str = ""    # COPILOT_SKILLS_DIRS
+
+    def secret_values(self) -> list[str]:
+        return [v for v in [self.copilot_github_token] if v]
 
 
 class CodexAIConfig(BaseSettings):
@@ -146,7 +150,7 @@ class AIConfig(BaseSettings):
     def secret_values(self) -> list[str]:
         # Delegate to nested sub-configs so SecretRedactor._collect_secrets() (which only
         # iterates top-level Settings fields) still discovers all per-backend key values.
-        return self.direct.secret_values() + self.codex.secret_values()
+        return self.copilot.secret_values() + self.direct.secret_values() + self.codex.secret_values()
 
 
 class AuditConfig(BaseSettings):

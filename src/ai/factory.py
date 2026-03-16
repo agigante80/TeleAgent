@@ -77,6 +77,7 @@ def create_backend(ai: AIConfig) -> AICLIBackend:
             model=ai.copilot.copilot_model or ai.ai_model,
             opts=ai.ai_cli_opts,
             skills_dirs=ai.copilot.copilot_skills_dirs,
+            copilot_github_token=ai.copilot.copilot_github_token,
         )
 
     if ai.ai_cli == "codex":
