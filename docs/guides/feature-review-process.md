@@ -57,6 +57,9 @@ dev Please start a feature review of docs/features/my-feature.md
 That agent becomes the first reviewer and the chain starts automatically. No other manual
 steps are required until the final approval (or a re-review request) is posted back here.
 
+> _Triggered via `sec` or `docs` instead? See **Review Order** below — the chain wraps
+> so all three agents still participate and GateDocs still makes the final call._
+
 ---
 
 ## Review Order
@@ -149,9 +152,12 @@ subsystem must verify the following before a ≥ 9 score can be awarded:
 
 When it is your turn:
 
-1. **Sync to `develop`** — `git pull --rebase origin develop`
+1. **Sync to `develop`** — `git pull --rebase origin develop`, then verify the
+   commit SHA from the delegation message is in your history (`git log --oneline | head`).
+   If the SHA is missing, the push from the previous reviewer may not have landed — do not
+   proceed until it is present.
    _(Note: avoid `git reset --hard` — it silently discards uncommitted work.)_
-2. **Read the current doc** — `docs/features/<feature>.md`
+2. **Read the current doc** — `<doc-path>` (e.g. `docs/features/<feature>.md` or `docs/guides/<guide>.md`)
 3. **Edit the doc** — make inline improvements (fill gaps, fix inaccuracies, add notes).
    Write directly in the doc; do not leave comments-only. The doc should be better after
    your review than before.
@@ -167,9 +173,10 @@ When it is your turn:
 
 ---
 
-## Team Review Table (added to every feature doc)
+## Team Review Table (added to every doc under review)
 
-Each feature doc contains this section immediately after the status line:
+Each doc under review contains this section. For feature specs, place it immediately after the
+status line; for guide files, place it at the end of the document (before any appendices).
 
 ```markdown
 ## Team Review
@@ -194,7 +201,7 @@ date (ISO format: `YYYY-MM-DD`) and a one-sentence note summarising your key fin
 ### GateCode → GateSec
 
 ```
-[DELEGATE: sec Feature doc review of `docs/features/<feature>.md` — round <N>.
+[DELEGATE: sec Feature doc review of `<doc-path>` — round <N>.
 Branch: develop | Commit: <SHA>
 GateCode score: <X>/10. Please sync to that commit, review the doc, make inline improvements,
 update your row in the Team Review table with your score, commit to develop, and DELEGATE
@@ -204,7 +211,7 @@ to docs when done. See `docs/guides/feature-review-process.md` for the full prot
 ### GateSec → GateDocs
 
 ```
-[DELEGATE: docs Feature doc review of `docs/features/<feature>.md` — round <N>.
+[DELEGATE: docs Feature doc review of `<doc-path>` — round <N>.
 Branch: develop | Commit: <SHA>
 GateCode: <X>/10 | GateSec: <Y>/10. Please sync to that commit, review the doc, make inline
 improvements, update your row in the Team Review table with your score, and commit to develop.
@@ -217,7 +224,7 @@ See `docs/guides/feature-review-process.md` for the full protocol.]
 ### GateDocs → GateCode (re-review round)
 
 ```
-[DELEGATE: dev Feature doc re-review of `docs/features/<feature>.md` — round <N+1>.
+[DELEGATE: dev Feature doc re-review of `<doc-path>` — round <N+1>.
 Branch: develop | Commit: <SHA>
 Round <N> scores: GateCode <X>/10 | GateSec <Y>/10 | GateDocs <Z>/10.
 See doc for blocking gaps (do not list specifics here). Please sync to that commit, address the
@@ -236,7 +243,8 @@ When GateDocs completes the final review and all scores in that round are ≥ 9:
    **Status**: ✅ Approved — round <N>, all scores ≥ 9
    **Approved**: Yes — ready to implement
    ```
-2. Change the top-level status line from `Planned` to `Approved`:
+2. Change the top-level status line from `Planned` to `Approved` (applies to feature specs
+   with a formal status header; skip for guide files):
    ```markdown
    > Status: **Approved** | Priority: … | Last reviewed: YYYY-MM-DD
    ```
@@ -244,7 +252,7 @@ When GateDocs completes the final review and all scores in that round are ≥ 9:
 4. Post approval to the channel by including this text in your **response** (no DELEGATE — you
    are already in the channel):
    ```
-   ✅ `docs/features/<feature>.md` is approved (round <N>).
+   ✅ `<doc-path>` is approved (round <N>).
    Scores: GateCode <X>/10 | GateSec <Y>/10 | GateDocs <Z>/10.
    Ready to implement. Assign to a milestone or ask me to open the implementation PR.
    ```
@@ -328,6 +336,14 @@ does not replace the `[DELEGATE]` handoff or the Team Review table.
 ## Notes
 
 - All commits happen on `develop`. Never commit directly to `main`.
+- The reviewing agent is responsible for making the doc _better_, not just scoring it.
+  A 6/10 score with a list of gaps is only useful if those gaps are also fixed or
+  detailed enough that the next round can fix them.
+- If the feature doc does not yet have a Team Review table, the first reviewer adds it.
+- Team Review table rows from prior rounds are *append-only* — never delete or modify
+  historical rows. They form the audit trail for the review chain.
+- The process applies to any file under `docs/features/` (except `_template.md`) and
+  to guide files under `docs/guides/` when explicitly requested.
 
 ---
 
@@ -337,14 +353,10 @@ does not replace the `[DELEGATE]` handoff or the Team Review table.
 |----------|-------|-------|------------|-------|
 | GateCode | 1     | 9/10  | 2026-03-14 | Fixed template table placeholders, clarified wrap-around order |
 | GateSec  | 1     | 9/10  | 2026-03-14 | Added security scoring floor, SecretRedactor coverage rule, threat model requirement |
-| GateDocs | 1     | -/10  | -          | Pending |
+| GateDocs | 1     | 9/10  | 2026-03-16 | Added trigger→chain pointer in "How to Trigger"; guide is authoritative and complete |
+| GateCode | 2     | 9/10  | 2026-03-16 | Moved orphaned Notes bullets into Notes section; expanded scope to include docs/guides/ |
+| GateSec  | 2     | 9/10  | 2026-03-16 | Added commit-SHA verification step and audit-trail integrity rule for Team Review rows |
+| GateDocs | 2     | 9/10  | 2026-03-16 | Generalised doc-path placeholders and Team Review table placement for guide files |
 
-**Status**: ⏳ Pending review
-**Approved**: No — requires all scores ≥ 9/10 in the same round
-
----
-- The reviewing agent is responsible for making the doc _better_, not just scoring it.
-  A 6/10 score with a list of gaps is only useful if those gaps are also fixed or
-  detailed enough that the next round can fix them.
-- If the feature doc does not yet have a Team Review table, the first reviewer adds it.
-- The process applies to any file under `docs/features/` except `_template.md`.
+**Status**: ✅ Approved — round 2, all scores ≥ 9
+**Approved**: Yes — ready to implement

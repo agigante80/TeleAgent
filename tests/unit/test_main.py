@@ -130,8 +130,9 @@ def test_main_success_path_handles_keyboard_interrupt():
 # ── startup() platform branch ─────────────────────────────────────────────────
 
 async def test_startup_calls_slack_branch():
-    """startup() routes to _startup_slack when platform=slack (lines 129-133)."""
+    """startup() routes to slack adapter when platform=slack."""
     from src.main import startup
+    from src.config import StorageConfig
 
     settings = _make_settings(platform="slack")
     settings.github = MagicMock()
@@ -140,24 +141,39 @@ async def test_startup_calls_slack_branch():
     settings.github.branch = "main"
     settings.ai = MagicMock()
     settings.ai.ai_cli = "api"
+    settings.bot = MagicMock(spec=BotConfig)
+    settings.bot.max_output_chars = 3000
+    settings.bot.allow_secrets = False
+    settings.bot.shell_allowlist = []
+    settings.bot.shell_readonly = False
+    storage_cfg = MagicMock(spec=StorageConfig)
+    storage_cfg.storage_backend = "sqlite"
+    storage_cfg.audit_backend = "sqlite"
+    settings.storage = storage_cfg
 
-    with patch("src.main.repo.clone", new=AsyncMock()), \
-         patch("src.main.repo.configure_git_auth", new=AsyncMock()), \
+    mock_adapter = AsyncMock()
+    mock_adapter.start = AsyncMock()
+
+    with patch("src.repo.clone", new=AsyncMock()), \
+         patch("src.repo.configure_git_auth", new=AsyncMock()), \
          patch("src.main.runtime.install_deps", new=AsyncMock(return_value="ok")), \
-         patch("src.main.SQLiteStorage", return_value=MagicMock(init=AsyncMock())), \
-         patch("src.main.SQLiteAuditLog", return_value=MagicMock(init=AsyncMock())), \
+         patch("src.registry.storage_registry.create", return_value=MagicMock(init=AsyncMock())), \
+         patch("src.registry.audit_registry.create", return_value=MagicMock(init=AsyncMock(), verify=AsyncMock(return_value=True))), \
          patch("src.main.create_backend", return_value=MagicMock()), \
-         patch("src.main._startup_slack", new=AsyncMock()) as mock_slack, \
-         patch("src.main._startup_telegram", new=AsyncMock()) as mock_tg:
+         patch("src.main._load_platforms"), \
+         patch("src.registry.platform_registry.create", return_value=mock_adapter) as mock_create:
         await startup(settings)
 
-    mock_slack.assert_awaited_once()
-    mock_tg.assert_not_awaited()
+    # Verify the slack platform adapter was created
+    mock_create.assert_called_once()
+    assert mock_create.call_args[0][0] == "slack"
+    mock_adapter.start.assert_awaited_once()
 
 
 async def test_startup_calls_telegram_branch():
-    """startup() routes to _startup_telegram when platform=telegram (lines 129-133)."""
+    """startup() routes to telegram adapter when platform=telegram."""
     from src.main import startup
+    from src.config import StorageConfig
 
     settings = _make_settings(platform="telegram")
     settings.github = MagicMock()
@@ -166,16 +182,30 @@ async def test_startup_calls_telegram_branch():
     settings.github.branch = "main"
     settings.ai = MagicMock()
     settings.ai.ai_cli = "api"
+    settings.bot = MagicMock(spec=BotConfig)
+    settings.bot.max_output_chars = 3000
+    settings.bot.allow_secrets = False
+    settings.bot.shell_allowlist = []
+    settings.bot.shell_readonly = False
+    storage_cfg = MagicMock(spec=StorageConfig)
+    storage_cfg.storage_backend = "sqlite"
+    storage_cfg.audit_backend = "sqlite"
+    settings.storage = storage_cfg
 
-    with patch("src.main.repo.clone", new=AsyncMock()), \
-         patch("src.main.repo.configure_git_auth", new=AsyncMock()), \
+    mock_adapter = AsyncMock()
+    mock_adapter.start = AsyncMock()
+
+    with patch("src.repo.clone", new=AsyncMock()), \
+         patch("src.repo.configure_git_auth", new=AsyncMock()), \
          patch("src.main.runtime.install_deps", new=AsyncMock(return_value="ok")), \
-         patch("src.main.SQLiteStorage", return_value=MagicMock(init=AsyncMock())), \
-         patch("src.main.SQLiteAuditLog", return_value=MagicMock(init=AsyncMock())), \
+         patch("src.registry.storage_registry.create", return_value=MagicMock(init=AsyncMock())), \
+         patch("src.registry.audit_registry.create", return_value=MagicMock(init=AsyncMock(), verify=AsyncMock(return_value=True))), \
          patch("src.main.create_backend", return_value=MagicMock()), \
-         patch("src.main._startup_slack", new=AsyncMock()) as mock_slack, \
-         patch("src.main._startup_telegram", new=AsyncMock()) as mock_tg:
+         patch("src.main._load_platforms"), \
+         patch("src.registry.platform_registry.create", return_value=mock_adapter) as mock_create:
         await startup(settings)
 
-    mock_tg.assert_awaited_once()
-    mock_slack.assert_not_awaited()
+    # Verify the telegram platform adapter was created
+    mock_create.assert_called_once()
+    assert mock_create.call_args[0][0] == "telegram"
+    mock_adapter.start.assert_awaited_once()

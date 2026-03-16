@@ -1,8 +1,12 @@
 """Unit tests for executor.py — is_destructive, truncate_output, summarize_if_long."""
+import os
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from src.executor import is_destructive, truncate_output, summarize_if_long, run_shell, sanitize_git_ref
+from src.executor import (
+    is_destructive, truncate_output, summarize_if_long, run_shell,
+    sanitize_git_ref, scrubbed_env, _SECRET_ENV_KEYS, validate_shell_command,
+)
 
 
 class TestSanitizeGitRef:
@@ -149,3 +153,180 @@ class TestRunShell:
             result = await run_shell("cmd", 100)
         assert "⚠️ Output truncated" in result
         assert len(result) <= 300  # header + a few kept lines
+
+
+class TestScrubbedEnv:
+    """scrubbed_env() must strip all known secret env vars and pass everything else through."""
+
+    def test_strips_all_secret_keys(self):
+        fake_secrets = {k: "s3cr3t" for k in _SECRET_ENV_KEYS}
+        with patch.dict(os.environ, fake_secrets, clear=False):
+            result = scrubbed_env()
+        for key in _SECRET_ENV_KEYS:
+            assert key not in result, f"{key} should have been stripped"
+
+    def test_preserves_non_secret_vars(self):
+        with patch.dict(os.environ, {"NODE_PATH": "/usr/lib/node", "HOME": "/root"}, clear=False):
+            result = scrubbed_env()
+        assert result.get("NODE_PATH") == "/usr/lib/node"
+        assert "HOME" in result
+
+    def test_returns_dict_copy(self):
+        result = scrubbed_env()
+        result["MUTATED"] = "yes"
+        assert os.environ.get("MUTATED") is None
+
+    def test_run_shell_passes_scrubbed_env(self):
+        """run_shell must pass env= to create_subprocess_shell so secrets cannot leak."""
+        mock_proc = AsyncMock()
+        mock_proc.returncode = 0
+        mock_proc.communicate = AsyncMock(return_value=(b"ok\n", b""))
+
+        captured_kwargs: dict = {}
+
+        async def _fake_shell(cmd, **kwargs):
+            captured_kwargs.update(kwargs)
+            return mock_proc
+
+        import asyncio
+        with patch("asyncio.create_subprocess_shell", side_effect=_fake_shell):
+            asyncio.get_event_loop().run_until_complete(run_shell("echo ok", 3000))
+
+        assert "env" in captured_kwargs, "run_shell must pass env= to create_subprocess_shell"
+        for key in _SECRET_ENV_KEYS:
+            assert key not in captured_kwargs["env"], f"{key} must not be forwarded by run_shell"
+
+
+class TestValidateShellCommand:
+    """validate_shell_command() — metachar injection, readonly mode, allowlist."""
+
+    # ── 1. Metacharacter bypass vectors (sec-provided list) ──────────────
+
+    @pytest.mark.parametrize("cmd", [
+        "ls; rm -rf /",                   # semicolon
+        "ls && rm -rf /",                 # double-ampersand
+        "ls || evil",                     # double-pipe
+        "ls | cat /etc/passwd",           # single pipe
+        "echo $(cat /etc/passwd)",        # command substitution $()
+        "echo `cat /etc/passwd`",         # backtick substitution
+        "ls\nrm -rf /",                   # embedded newline
+        "ls\rrm -rf /",                   # carriage return
+        "cmd > /etc/cron.daily/evil",     # redirect-out
+        "cmd < /etc/passwd",              # redirect-in
+        "{ malicious; }",                 # brace grouping
+        "ls;cat /etc/shadow",             # semicolon no space
+        "git log --format='%s' $(evil)",  # nested $()
+    ])
+    def test_metachar_blocked(self, cmd):
+        result = validate_shell_command(cmd, allowlist=[], readonly=False)
+        assert result is not None
+        assert "Blocked" in result
+
+    # ── 2. Clean commands pass ───────────────────────────────────────────
+
+    @pytest.mark.parametrize("cmd", [
+        "ls -la",
+        "git status",
+        "git log --oneline -10",
+        "cat README.md",
+        "python3 --version",
+    ])
+    def test_clean_commands_pass(self, cmd):
+        assert validate_shell_command(cmd, allowlist=[], readonly=False) is None
+
+    # ── 3. SHELL_READONLY mode ───────────────────────────────────────────
+
+    def test_readonly_blocks_write_command(self):
+        result = validate_shell_command("rm -rf /tmp/x", allowlist=[], readonly=True)
+        assert result is not None and "Blocked" in result
+
+    def test_readonly_allows_ls(self):
+        assert validate_shell_command("ls -la", allowlist=[], readonly=True) is None
+
+    def test_readonly_allows_git_log(self):
+        assert validate_shell_command("git log --oneline", allowlist=[], readonly=True) is None
+
+    def test_readonly_blocks_git_push(self):
+        result = validate_shell_command("git push origin main", allowlist=[], readonly=True)
+        assert result is not None and "Blocked" in result
+
+    def test_readonly_blocks_git_commit(self):
+        result = validate_shell_command("git commit -m msg", allowlist=[], readonly=True)
+        assert result is not None and "Blocked" in result
+
+    # ── 4. SHELL_ALLOWLIST mode ──────────────────────────────────────────
+
+    def test_allowlist_permits_listed_command(self):
+        assert validate_shell_command("git status", allowlist=["git"], readonly=False) is None
+
+    def test_allowlist_blocks_unlisted_command(self):
+        result = validate_shell_command("curl http://evil.example/", allowlist=["git"], readonly=False)
+        assert result is not None and "Blocked" in result
+
+    def test_allowlist_strips_path_prefix(self):
+        """A full path like /usr/bin/ls should match allowlist entry 'ls'."""
+        assert validate_shell_command("/usr/bin/ls -la", allowlist=["ls"], readonly=False) is None
+
+    def test_empty_cmd_returns_block_when_allowlist_set(self):
+        # empty string: shlex returns [], _first_token returns None → blocked
+        result = validate_shell_command("", allowlist=["git"], readonly=False)
+        # empty command is fine without allowlist, but with allowlist None token → blocked
+        assert result is not None
+
+    def test_metachar_checked_before_allowlist(self):
+        """Metachar must be caught even if the command would otherwise be in the allowlist."""
+        result = validate_shell_command("git status; rm -rf /", allowlist=["git"], readonly=False)
+        assert result is not None and "metachar" in result.lower()
+
+    def test_metachar_checked_before_readonly(self):
+        """Metachar must be caught even in readonly mode."""
+        result = validate_shell_command("ls; evil", allowlist=[], readonly=True)
+        assert result is not None and "metachar" in result.lower()
+
+    # ── 5. sed -i gating in SHELL_READONLY mode ──────────────────────────
+
+    def test_sed_read_allowed_in_readonly(self):
+        """Plain sed without -i is read-only and must be permitted."""
+        assert validate_shell_command("sed 's/foo/bar/' file.txt", allowlist=[], readonly=True) is None
+
+    def test_sed_i_blocked_in_readonly(self):
+        """`sed -i` must be blocked in readonly mode (in-place write)."""
+        result = validate_shell_command("sed -i 's/x/y/' file.txt", allowlist=[], readonly=True)
+        assert result is not None and "Blocked" in result and "sed -i" in result
+
+    def test_sed_i_backup_blocked_in_readonly(self):
+        """`sed -i.bak` (BSD-style in-place with backup) must also be blocked."""
+        result = validate_shell_command("sed -i.bak 's/x/y/' file.txt", allowlist=[], readonly=True)
+        assert result is not None and "Blocked" in result
+
+    def test_sed_ni_blocked_in_readonly(self):
+        """Short-flag bundle `-ni` still performs in-place writes and must be blocked."""
+        result = validate_shell_command("sed -ni 's/x/y/' file.txt", allowlist=[], readonly=True)
+        assert result is not None and "Blocked" in result
+
+    def test_sed_long_in_place_blocked_in_readonly(self):
+        """`sed --in-place` long-form must be blocked (previously bypassed the short-flag check)."""
+        result = validate_shell_command("sed --in-place 's/x/y/' file.txt", allowlist=[], readonly=True)
+        assert result is not None and "Blocked" in result and "in-place" in result
+
+    def test_sed_long_in_place_suffix_blocked_in_readonly(self):
+        """`sed --in-place=.bak` long-form with suffix must also be blocked."""
+        result = validate_shell_command("sed --in-place=.bak 's/x/y/' file.txt", allowlist=[], readonly=True)
+        assert result is not None and "Blocked" in result and "in-place" in result
+
+    # ── 6. Removed interpreters not in _READONLY_CMDS ────────────────────
+
+    def test_python3_blocked_in_readonly(self):
+        """python3 must not be in readonly set — arbitrary execution risk."""
+        result = validate_shell_command("python3 script.py", allowlist=[], readonly=True)
+        assert result is not None and "Blocked" in result
+
+    def test_node_blocked_in_readonly(self):
+        """node must not be in readonly set — arbitrary execution risk."""
+        result = validate_shell_command("node index.js", allowlist=[], readonly=True)
+        assert result is not None and "Blocked" in result
+
+    def test_awk_blocked_in_readonly(self):
+        """awk must not be in readonly set — can call system() without metacharacters."""
+        result = validate_shell_command("awk '{print}' file.txt", allowlist=[], readonly=True)
+        assert result is not None and "Blocked" in result

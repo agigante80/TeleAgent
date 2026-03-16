@@ -1,6 +1,6 @@
 # Modular Plugin Architecture (pre-work for forks and cherry-pick)
 
-> Status: **Planned** | Priority: High | Last reviewed: 2026-03-15
+> Status: **Approved** | Priority: High | Last reviewed: 2026-03-15
 
 Refactor AgentGate's internals so that every major subsystem (platforms, AI backends,
 commands, storage, services) is registered through a stable extension API rather than
@@ -26,10 +26,14 @@ begins implementation.
 | GateSec  | 2     | 8/10  | 2026-03-15 (cd13e43) | R1 OQs resolved: OQ9 (registry hijack → ValueError default), OQ11 (NullRepoService standalone), OQ12 (InMemoryStorage bounded), OQ14 (accepted + logged), OQ15 (find_spec pattern), OQ16 (hardcoded list). OQ10 partially resolved (repr=False). OQ13 mitigated (test coverage). 2 new: OQ17 (platform import inconsistency with Step 5a), OQ18 (COMMANDS list no uniqueness check). |
 | GateDocs | 2     | 7/10  | 2026-03-15 | 2 blockers fixed: (1) Step 5b `main.py` sample replaced bare `try/except ImportError: pass` with `_load_platforms()` matching the OQ15-compliant pattern from Step 5a — OQ17 resolved; (2) `register_command()` in Step 4a now raises `ValueError` on duplicate `name` — OQ18 resolved. 4 gaps addressed: test rows added for OQ17 and OQ18, `.github/copilot-instructions.md` added to Files table, duplicate GateSec security-additions test rows consolidated. |
 
-| GateDocs | 3     | 8/10  | 2026-03-15 | GateCode R3 verified ✅. 2 stale wording gaps fixed: (1) Step 5b extraction note read "must be extracted" — GateCode R3 already completed the extraction to `src/_loader.py`; updated to past tense; (2) OQ17 still listed `src/registry.py` as an alternative — settled to `src/_loader.py` to match Files table and code samples. Spec is implementation-ready: all blockers resolved, all OQs documented (OQ10 accepted with repr=False, OQ13 mitigated with test coverage). |
+| GateDocs | 3     | 8/10  | 2026-03-15 | GateCode R3 verified ✅. 2 stale wording gaps fixed: (1) Step 5b extraction note read "must be extracted" — GateCode R3 already completed the extraction to `src/_loader.py`; updated to past tense; (2) OQ17 still listed `src/registry.py` as an alternative — settled to `src/_loader.py` to match Files table and code samples. Spec is implementation-ready: all blockers resolved, all OQs documented. |
 
-**Status**: ⏳ In review — round 3
-**Approved**: No — requires all scores ≥ 9/10 in the same round
+| GateCode | 4     | 9/10  | 2026-03-15 | 3 gaps fixed: (1) `RuntimeService` design/impl mismatch — dropped from `Services` dataclass in Design Space; added note that dep detection runs at startup, not via handlers; (2) version bump stale (`0.19.0`) — updated to `0.21.0` / dynamic derivation note; (3) `test_all_sub_configs_implement_secret_provider` referenced in OQ13 text but missing from Test Plan — added to `tests/unit/test_config.py` additions table. |
+| GateSec  | 4     | 9/10  | 2026-03-15 | All R1/R2 findings resolved; GateCode R4 fixes verified (RuntimeService dropped, OQ13 CI test added); no new security gaps |
+| GateDocs | 4     | 9/10  | 2026-03-15 | Added `README.md` to Files table (was missing despite being in ACs and Documentation Updates); all R4 findings verified. |
+
+**Status**: ✅ Approved — round 4, all scores ≥ 9
+**Approved**: Yes — ready to implement
 
 ---
 
@@ -229,10 +233,16 @@ Tight coupling; monkeypatching required in tests.
 class Services:
     shell: ShellService          # wraps executor.run_shell
     repo: RepoService            # wraps src/repo.py functions
-    runtime: RuntimeService      # wraps src/runtime.py
     redactor: SecretRedactor
     transcriber: Transcriber | None
 ```
+
+> **Note on `RuntimeService`**: an early draft included `runtime: RuntimeService` here, but
+> dep detection (`runtime.py`) runs once at startup — before handlers are created — and is
+> never called by user-facing handlers. Wrapping it in a `Services` field would add
+> complexity with no concrete benefit. `RuntimeService` is therefore _not_ implemented in
+> this spec. If a fork needs to swap the dep-detection behaviour, it should register a
+> custom detector via `register_detector()` (Axis 5) rather than replacing `RuntimeService`.
 
 Both `TelegramAdapter` and `SlackAdapter` receive a `Services` instance. Tests pass a
 mock `Services`. Forks can swap `RepoService` with a `LocalRepoService` (no git clone)
@@ -1017,6 +1027,7 @@ register_detector("Cargo.toml", ["cargo", "build"])
 | `.env.example` | **Edit** | Add commented entries for `STORAGE_BACKEND` and `AUDIT_BACKEND` |
 | `docker-compose.yml.example` | **Edit** | Add commented entries for `STORAGE_BACKEND` and `AUDIT_BACKEND` |
 | `.github/copilot-instructions.md` | **Edit** | Add registry, `Services`, command registry, and `SecretProvider` patterns to Architecture section |
+| `README.md` | **Edit** | Add `STORAGE_BACKEND` and `AUDIT_BACKEND` rows to the env var table |
 
 ---
 
@@ -1081,6 +1092,7 @@ No new runtime or dev dependencies.
 | `test_telegram_config_secret_values` | Returns `bot_token` when set, empty list when not |
 | `test_slack_config_secret_values` | Returns both tokens when set |
 | `test_ai_config_secret_values` | Returns `ai_api_key` and `codex.codex_api_key` (nested field) |
+| `test_all_sub_configs_implement_secret_provider` | Every sub-config on `Settings` satisfies `isinstance(x, SecretProvider)` — CI enforcement of OQ13 |
 
 ### `tests/integration/test_startup.py` additions
 
@@ -1175,7 +1187,11 @@ the sub-config — never edit `_collect_secrets()` in `redact.py`.
 
 ## Version Bump
 
-No env vars renamed or removed. All changes are internal. → **MINOR** bump: `0.18.x` → `0.19.0`
+No env vars renamed or removed. All changes are internal. → **MINOR** bump.
+
+Current `VERSION` as of this spec: `0.20.0`. Next release: `0.21.0`.
+_(Merge-time: if another MINOR feature lands first, this becomes `0.22.0` — always derive from
+the `VERSION` file at merge time, not from a hardcoded target here.)_
 
 ---
 
@@ -1302,6 +1318,29 @@ No env vars renamed or removed. All changes are internal. → **MINOR** bump: `0
     raises `ValueError` if `name` is already present. Consistent with `Registry.register()`
     (which raises on duplicate keys per OQ9). Tests `test_register_command_duplicate_name_raises`
     added to `tests/unit/test_command_registry.py`.
+
+### GateSec R4 Findings
+
+*Score: 9/10* — All 10 R1/R2 security findings (OQ9–OQ18) remain resolved. GateCode R4
+fixes verified; no new security concerns.
+
+- ✅ *OQ9 (registry hijack)* — `ValueError` default + `force=True` override path. Sound.
+- ✅ *OQ10 (token exposure)* — `field(repr=False)` mitigates logging vectors. Accepted as LOW residual risk.
+- ✅ *OQ11 (NullRepoService)* — standalone class, no `token` attribute. Sound.
+- ✅ *OQ12 (InMemoryStorage)* — bounded at `max_entries_per_chat=200`. Sound.
+- ✅ *OQ13 (SecretProvider opt-in)* — GateCode R4 added `test_all_sub_configs_implement_secret_provider` to the Test Plan (`tests/unit/test_config.py`). CI now enforces the contract. Residual gap (forks skipping CI) accepted as LOW.
+- ✅ *OQ14–OQ16* — detector logging, `find_spec` pattern, hardcoded module lists. All verified.
+- ✅ *OQ17–OQ18* — platform import consistency and COMMANDS uniqueness. Both resolved.
+
+*GateCode R4 changes — security impact:*
+1. `RuntimeService` dropped from `Services` — reduces attack surface (fewer service-layer wrappers). ✅ Positive.
+2. Version bump `0.21.0` + dynamic derivation — no security impact.
+3. OQ13 test in Test Plan — strengthens CI enforcement of `SecretProvider` contract. ✅ Positive.
+
+*No new attack surface.* Auth guards preserved, no new endpoints, no user input paths added,
+`_collect_secrets` rewrite uses `model_fields` (Pydantic v2 idiomatic), hardcoded module
+lists prevent planted-file attacks.
+
 ---
 
 ## Acceptance Criteria
@@ -1326,7 +1365,7 @@ No env vars renamed or removed. All changes are internal. → **MINOR** bump: `0
 - [ ] `.github/copilot-instructions.md` updated with registry and `Services` patterns.
 - [ ] `README.md` updated with `STORAGE_BACKEND` and `AUDIT_BACKEND` env var rows.
 - [ ] `docs/roadmap.md` item 2.16 added.
-- [ ] `VERSION` bumped to `0.19.0` before merge to `main`.
+- [ ] `VERSION` bumped to `0.21.0` (or `VERSION + 0.1.0` if another MINOR lands first) before merge to `main`.
 - [ ] `.env.example` updated with commented entries for `STORAGE_BACKEND` and `AUDIT_BACKEND`.
 - [ ] `docker-compose.yml.example` updated with matching commented entries.
 - [ ] Feature works transparently on both Telegram and Slack — no behaviour change for

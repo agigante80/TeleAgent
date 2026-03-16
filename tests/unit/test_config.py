@@ -143,3 +143,69 @@ class TestAIConfig:
         monkeypatch.setenv("AI_CLI_OPTS", "--allow-all-tools --allow-url github.com")
         cfg = AIConfig()
         assert cfg.ai_cli_opts == "--allow-all-tools --allow-url github.com"
+
+
+class TestSecretValues:
+    def test_telegram_config_secret_values_with_token(self):
+        cfg = TelegramConfig(TG_BOT_TOKEN="my-bot-token-12345678")
+        assert "my-bot-token-12345678" in cfg.secret_values()
+
+    def test_telegram_config_secret_values_empty(self):
+        cfg = TelegramConfig()
+        assert cfg.secret_values() == []
+
+    def test_slack_config_secret_values(self):
+        cfg = SlackConfig(slack_bot_token="xoxb-abc", slack_app_token="xapp-xyz")
+        assert "xoxb-abc" in cfg.secret_values()
+        assert "xapp-xyz" in cfg.secret_values()
+
+    def test_ai_config_secret_values(self, monkeypatch):
+        monkeypatch.setenv("AI_API_KEY", "sk-testkey")
+        monkeypatch.setenv("CODEX_API_KEY", "codex-key-12345")
+        cfg = AIConfig()
+        secrets = cfg.secret_values()
+        assert "sk-testkey" in secrets
+        assert "codex-key-12345" in secrets
+
+    def test_voice_config_secret_values(self):
+        from src.config import VoiceConfig
+        cfg = VoiceConfig(whisper_api_key="whisper-secret-key")
+        assert "whisper-secret-key" in cfg.secret_values()
+
+    def test_storage_config_secret_values_empty(self):
+        from src.config import StorageConfig
+        cfg = StorageConfig()
+        assert cfg.secret_values() == []
+
+    def test_all_sub_configs_implement_secret_provider(self):
+        """All Settings sub-configs must implement SecretProvider — CI enforcement of OQ13."""
+        from src.redact import SecretProvider
+        from src.config import Settings
+        s = Settings()
+        for field_name in Settings.model_fields:
+            attr = getattr(s, field_name)
+            if hasattr(type(attr), "model_fields"):  # it's a sub-config (BaseSettings)
+                assert isinstance(attr, SecretProvider), (
+                    f"{field_name} ({type(attr).__name__}) does not implement SecretProvider. "
+                    "Add a secret_values() -> list[str] method."
+                )
+
+
+class TestStorageConfig:
+    def test_defaults(self):
+        from src.config import StorageConfig
+        cfg = StorageConfig()
+        assert cfg.storage_backend == "sqlite"
+        assert cfg.audit_backend == "sqlite"
+
+    def test_storage_backend_from_env(self, monkeypatch):
+        monkeypatch.setenv("STORAGE_BACKEND", "memory")
+        from src.config import StorageConfig
+        cfg = StorageConfig()
+        assert cfg.storage_backend == "memory"
+
+    def test_audit_backend_from_env(self, monkeypatch):
+        monkeypatch.setenv("AUDIT_BACKEND", "null")
+        from src.config import StorageConfig
+        cfg = StorageConfig()
+        assert cfg.audit_backend == "null"

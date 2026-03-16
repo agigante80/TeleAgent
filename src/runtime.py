@@ -4,17 +4,30 @@ import logging
 from pathlib import Path
 
 from src.config import REPO_DIR
+from src.executor import scrubbed_env
 
 logger = logging.getLogger(__name__)
 
-_DETECTORS: list[tuple[str, list[str]]] = [
-    ("package.json", ["npm", "install"]),
-    ("pyproject.toml", ["pip", "install", "-e", "."]),
-    ("requirements.txt", ["pip", "install", "-r", "requirements.txt"]),
-    ("go.mod", ["go", "mod", "download"]),
-]
+_DETECTORS: list[tuple[str, list[str]]] = []
 
 _SENTINEL_DIR = Path("/data/.install_sentinels")
+
+
+def register_detector(manifest: str, cmd: list[str]) -> None:
+    """Register a dependency detector.
+
+    All registered detectors are logged at INFO level so operators can audit
+    what commands will run at startup.
+    """
+    _DETECTORS.append((manifest, cmd))
+    logger.info("Dep detector registered: %s → %s", manifest, cmd)
+
+
+# Built-in registrations
+register_detector("package.json",     ["npm", "install"])
+register_detector("pyproject.toml",   ["pip", "install", "-e", "."])
+register_detector("requirements.txt", ["pip", "install", "-r", "requirements.txt"])
+register_detector("go.mod",           ["go", "mod", "download"])
 
 
 def _manifest_hash(manifest_path: Path) -> str:
@@ -37,6 +50,7 @@ async def install_deps() -> str:
         logger.info("Detected %s → running %s", marker, " ".join(cmd))
         proc = await asyncio.create_subprocess_exec(
             *cmd, cwd=str(REPO_DIR),
+            env=scrubbed_env(),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
         )

@@ -251,6 +251,8 @@ class TestRedactorCoverage:
         s.github.github_repo_token = ""
         s.ai.ai_api_key = "shared-key-value-long"
         s.ai.codex.codex_api_key = "codex-only-secret-key"
+        # Protocol-based: secret_values() is what SecretRedactor calls on sub-configs
+        s.ai.secret_values.return_value = ["shared-key-value-long", "codex-only-secret-key"]
         s.voice.whisper_api_key = ""
 
         redactor = SecretRedactor(s)

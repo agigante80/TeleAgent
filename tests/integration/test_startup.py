@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 class TestStartup:
     async def test_startup_calls_all_phases(self, monkeypatch):
         """Verify startup() calls each phase in order and sends Ready message."""
-        from src.config import Settings, TelegramConfig, GitHubConfig, BotConfig, AIConfig, AuditConfig
+        from src.config import Settings, TelegramConfig, GitHubConfig, BotConfig, AIConfig, AuditConfig, StorageConfig
 
         # Build a minimal settings object
         tg = MagicMock(spec=TelegramConfig)
@@ -19,6 +19,10 @@ class TestStartup:
         bot = MagicMock(spec=BotConfig)
         bot.bot_cmd_prefix = "ta"
         bot.image_tag = ""
+        bot.max_output_chars = 3000
+        bot.allow_secrets = False
+        bot.shell_allowlist = []
+        bot.shell_readonly = False
         ai = MagicMock(spec=AIConfig)
         ai.ai_cli = "api"
         ai.ai_model = ""
@@ -27,6 +31,9 @@ class TestStartup:
         ai.direct = direct
         audit = MagicMock(spec=AuditConfig)
         audit.audit_enabled = True
+        storage_cfg = MagicMock(spec=StorageConfig)
+        storage_cfg.storage_backend = "sqlite"
+        storage_cfg.audit_backend = "sqlite"
         settings = MagicMock(spec=Settings)
         settings.platform = "telegram"
         settings.telegram = tg
@@ -34,6 +41,7 @@ class TestStartup:
         settings.bot = bot
         settings.ai = ai
         settings.audit = audit
+        settings.storage = storage_cfg
 
         mock_clone = AsyncMock()
         mock_install = AsyncMock(return_value="OK")
@@ -42,33 +50,24 @@ class TestStartup:
         mock_backend = MagicMock()
         mock_backend.is_stateful = False
 
-        mock_app = AsyncMock()
-        mock_app.__aenter__ = AsyncMock(return_value=mock_app)
-        mock_app.__aexit__ = AsyncMock(return_value=False)
-        mock_app.bot.send_message = AsyncMock()
-        mock_app.start = AsyncMock()
-        mock_app.updater.start_polling = AsyncMock()
+        mock_adapter = AsyncMock()
+        mock_adapter.start = AsyncMock()
 
         import asyncio
 
         with patch("src.repo.clone", mock_clone), \
              patch("src.repo.configure_git_auth", AsyncMock()), \
              patch("src.runtime.install_deps", mock_install), \
-             patch("src.main.SQLiteStorage", return_value=mock_storage), \
-             patch("src.main.SQLiteAuditLog", return_value=MagicMock(init=AsyncMock())), \
-             patch("src.main.create_backend", return_value=mock_backend):
+             patch("src.registry.storage_registry.create", return_value=mock_storage), \
+             patch("src.registry.audit_registry.create", return_value=MagicMock(init=AsyncMock(), verify=AsyncMock(return_value=True))), \
+             patch("src.main.create_backend", return_value=mock_backend), \
+             patch("src.main._load_platforms"), \
+             patch("src.registry.platform_registry.create", return_value=mock_adapter):
 
             from src.main import startup
-
-            # Patch asyncio.Event so wait() returns immediately
-            async def instant_wait(self):
-                return
-
-            with patch.object(asyncio.Event, "wait", instant_wait), \
-                 patch("src.bot.build_app", return_value=mock_app):
-                await startup(settings)
+            await startup(settings)
 
         mock_clone.assert_awaited_once()
         mock_install.assert_awaited_once()
         mock_storage.init.assert_awaited_once()
-        mock_app.bot.send_message.assert_awaited_once()
+        mock_adapter.start.assert_awaited_once()

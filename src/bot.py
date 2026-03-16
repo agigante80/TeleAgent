@@ -19,13 +19,14 @@ from telegram.ext import (
 from src.ai.adapter import AICLIBackend
 from src.audit import AuditLog, _ms_since
 from src.config import Settings, VERSION
-from src import executor, repo
 from src.history import ConversationStorage, build_context as _build_context
 from src.redact import SecretRedactor
 from src.ai import factory as ai_factory
 from src import transcriber as transcriber_mod
 from src.platform.common import thinking_ticker, finalize_thinking, split_text
 from src.ready_msg import ai_label as _ai_label
+from src.commands.registry import register_command, COMMANDS  # noqa: F401
+from src.registry import platform_registry
 
 logger = logging.getLogger(__name__)
 
@@ -224,7 +225,7 @@ def _requires_auth(method: Callable) -> Callable:
 # ── Handler class ────────────────────────────────────────────────────────────
 
 class _BotHandlers:
-    def __init__(self, settings: Settings, backend: AICLIBackend, storage: ConversationStorage, start_time: float, audit: AuditLog) -> None:
+    def __init__(self, settings: Settings, backend: AICLIBackend, storage: ConversationStorage, start_time: float, audit: AuditLog, services=None) -> None:
         self._settings = settings
         self._backend = backend
         self._history = storage
@@ -241,6 +242,19 @@ class _BotHandlers:
         self._redactor = SecretRedactor(settings)
         # per-chat asyncio Task registry for user-initiated cancellation
         self._active_tasks: dict[str, asyncio.Task] = {}
+        if services is None:
+            from src.services import Services, ShellService, RepoService
+            services = Services(
+                shell=ShellService(max_chars=settings.bot.max_output_chars, redactor=self._redactor),
+                repo=RepoService(
+                    token=settings.github.github_repo_token,
+                    repo_name=settings.github.github_repo,
+                    branch=settings.github.branch,
+                ),
+                redactor=self._redactor,
+                transcriber=None,
+            )
+        self._services = services
 
     def _init_transcriber(self, settings: Settings) -> "transcriber_mod.Transcriber | None":
         """Create the transcriber from config, or return None when disabled."""
@@ -365,8 +379,8 @@ class _BotHandlers:
                     ticker.cancel()
                     with suppress(asyncio.CancelledError):
                         await ticker
-                response = await executor.summarize_if_long(
-                    response, self._settings.bot.max_output_chars, self._backend
+                response = await self._services.shell.summarize_if_long(
+                    response, self._backend
                 )
                 response = self._redactor.redact(response)
                 elapsed = int(time.monotonic() - t_start)
@@ -396,6 +410,7 @@ class _BotHandlers:
     # ── Utility commands ──────────────────────────────────────────────────
 
     @_requires_auth
+    @register_command("run", "Execute a shell command", platforms={"telegram", "slack"}, requires_args=True, destructive=True)
     async def cmd_run(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         cmd = " ".join(ctx.args) if ctx.args else ""
         chat_id = str(update.effective_chat.id)
@@ -403,10 +418,19 @@ class _BotHandlers:
         if not cmd:
             await _reply(update, f"Usage: /{self._p}run <shell command>")
             return
+        block_reason = self._services.shell.validate_command(cmd)
+        if block_reason:
+            await _reply(update, block_reason)
+            await self._audit.record(
+                platform="telegram", chat_id=chat_id, user_id=user_id,
+                action="shell_exec", status="blocked",
+                detail={"cmd": self._redactor.redact(cmd), "reason": block_reason},
+            )
+            return
         needs_confirm = (
             self._confirm_destructive
-            and executor.is_destructive(cmd)
-            and not executor.is_exempt(cmd, self._settings.bot.skip_confirm_keywords)
+            and self._services.shell.is_destructive(cmd)
+            and not self._services.shell.is_exempt(cmd, self._settings.bot.skip_confirm_keywords)
         )
         if needs_confirm:
             kb = InlineKeyboardMarkup([[
@@ -427,7 +451,7 @@ class _BotHandlers:
         else:
             t0 = time.time()
             await update.effective_message.reply_text("⏳ Running…")
-            result = await executor.run_shell(cmd, self._settings.bot.max_output_chars, self._redactor)
+            result = await self._services.shell.run(cmd)
             await _reply(update, f"```\n{self._redactor.redact(result)}\n```")
             await self._audit.record(
                 platform="telegram", chat_id=chat_id, user_id=user_id,
@@ -437,17 +461,20 @@ class _BotHandlers:
             )
 
     @_requires_auth
+    @register_command("sync", "Pull latest changes from the remote repository", platforms={"telegram", "slack"})
     async def cmd_sync(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
         await update.effective_message.reply_text("⏳ Pulling latest changes…")
-        result = await repo.pull()
+        result = await self._services.repo.pull()
         await _reply(update, f"✅ Synced\n{result}")
 
     @_requires_auth
+    @register_command("git", "Show git status", platforms={"telegram", "slack"})
     async def cmd_git(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
-        result = await repo.status()
+        result = await self._services.repo.status()
         await _reply(update, f"```\n{result}\n```")
 
     @_requires_auth
+    @register_command("diff", "Show git diff", platforms={"telegram", "slack"})
     async def cmd_diff(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         """Show git diff. /{p} diff [n|sha] — defaults to last commit."""
         arg = ctx.args[0] if ctx.args else ""
@@ -456,21 +483,20 @@ class _BotHandlers:
         elif arg.isdigit():
             ref = f"HEAD~{arg} HEAD"
         else:
-            safe = executor.sanitize_git_ref(arg)
+            safe = self._services.shell.sanitize_ref(arg)
             if safe is None:
                 await _reply(update, "❌ Invalid git ref — use a branch name, tag, or commit SHA.")
                 return
             ref = f"{safe} HEAD"
-        result = await executor.run_shell(
+        result = await self._services.shell.run(
             f"git diff {ref} --stat && echo '---' && git diff {ref}",
-            self._settings.bot.max_output_chars,
-            self._redactor,
         )
         if not result.strip():
             result = "(no changes)"
         await update.effective_message.reply_text(f"```\n{self._redactor.redact(result)}\n```", parse_mode="Markdown")
 
     @_requires_auth
+    @register_command("log", "Show container logs", platforms={"telegram", "slack"})
     async def cmd_log(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         """Tail bot container logs. /{p} log [n] — default 20 lines."""
         try:
@@ -479,14 +505,13 @@ class _BotHandlers:
         except ValueError:
             await _reply(update, f"Usage: `/{self._p} log [lines]` — e.g. `/{self._p} log 50`")
             return
-        result = await executor.run_shell(
+        result = await self._services.shell.run(
             f"tail -n {n} /proc/1/fd/1 2>/dev/null || journalctl -n {n} --no-pager 2>/dev/null || echo '(log not accessible)'",
-            self._settings.bot.max_output_chars,
-            self._redactor,
         )
         await update.effective_message.reply_text(f"```\n{self._redactor.redact(result)}\n```", parse_mode="Markdown")
 
     @_requires_auth
+    @register_command("status", "Show AI activity status", platforms={"telegram", "slack"})
     async def cmd_status(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
         if self._active_ai:
             lines = ["🔄 AI is currently processing:\n"]
@@ -498,6 +523,7 @@ class _BotHandlers:
             await _reply(update, "✅ AI is idle — ready for your next message.")
 
     @_requires_auth
+    @register_command("confirm", "Toggle destructive-command confirmation", platforms={"telegram", "slack"})
     async def cmd_confirm(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         """Toggle or query the session-level destructive-command confirmation."""
         arg = (ctx.args[0].lower() if ctx.args else "").strip()
@@ -545,6 +571,7 @@ class _BotHandlers:
         await handler(update, ctx)
 
     @_requires_auth
+    @register_command("help", "Show available commands", platforms={"telegram", "slack"})
     async def cmd_help(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
         p = self._p
         confirm_note = (
@@ -580,6 +607,7 @@ class _BotHandlers:
         await update.effective_message.reply_text(text, parse_mode="Markdown")
 
     @_requires_auth
+    @register_command("info", "Show project information", platforms={"telegram", "slack"})
     async def cmd_info(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
         uptime_s = int(time.time() - self._start_time)
         h, remainder = divmod(uptime_s, 3600)
@@ -604,6 +632,7 @@ class _BotHandlers:
         await update.effective_message.reply_text(text, parse_mode="Markdown")
 
     @_requires_auth
+    @register_command("clear", "Clear conversation history", platforms={"telegram", "slack"})
     async def cmd_clear(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
         chat_id = str(update.effective_chat.id)
         user_id = str(update.effective_user.id) if update.effective_user else None
@@ -617,6 +646,7 @@ class _BotHandlers:
         )
 
     @_requires_auth
+    @register_command("cancel", "Cancel current AI request", platforms={"telegram"})
     async def cmd_cancel(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle `gate cancel` — cancel the in-progress AI request for this chat."""
         chat_id = str(update.effective_chat.id)
@@ -630,6 +660,7 @@ class _BotHandlers:
         )
 
     @_requires_auth
+    @register_command("init", "Clone/reset the repository", platforms={"telegram", "slack"})
     async def cmd_init(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
         """Clear history and forward `/init` to the AI with no prior context.
 
@@ -649,6 +680,7 @@ class _BotHandlers:
         await self._run_ai_pipeline(update, "/init", chat_id)
 
     @_requires_auth
+    @register_command("restart", "Restart the AI backend", platforms={"telegram", "slack"}, destructive=True)
     async def cmd_restart(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
         chat_id = str(update.effective_chat.id)
         user_id = str(update.effective_user.id) if update.effective_user else None
@@ -688,8 +720,17 @@ class _BotHandlers:
             )
             return
         t0 = time.time()
+        block_reason = self._services.shell.validate_command(cmd)
+        if block_reason:
+            await query.edit_message_text(block_reason)
+            await self._audit.record(
+                platform="telegram", chat_id=chat_id, user_id=user_id,
+                action="shell_confirm", status="blocked",
+                detail={"cmd": self._redactor.redact(cmd), "reason": block_reason},
+            )
+            return
         await query.edit_message_text(f"⏳ Running:\n`{cmd}`", parse_mode="Markdown")
-        result = await executor.run_shell(cmd, self._settings.bot.max_output_chars, self._redactor)
+        result = await self._services.shell.run(cmd)
         await query.message.reply_text(f"```\n{self._redactor.redact(result)}\n```", parse_mode="Markdown")
         await self._audit.record(
             platform="telegram", chat_id=chat_id, user_id=user_id,
@@ -738,9 +779,9 @@ class _BotHandlers:
 
 # ── App factory ──────────────────────────────────────────────────────────────
 
-def build_app(settings: Settings, backend: AICLIBackend, storage: ConversationStorage, start_time: float, audit: AuditLog) -> Application:
+def build_app(settings: Settings, backend: AICLIBackend, storage: ConversationStorage, start_time: float, audit: AuditLog, services=None) -> Application:
     app = Application.builder().token(settings.telegram.bot_token).build()
-    h = _BotHandlers(settings, backend, storage, start_time, audit)
+    h = _BotHandlers(settings, backend, storage, start_time, audit, services)
     p = _prefix(settings)
 
     app.add_handler(CommandHandler(p, h.cmd_ta))
@@ -764,3 +805,57 @@ def build_app(settings: Settings, backend: AICLIBackend, storage: ConversationSt
     app.add_handler(MessageHandler(filters.COMMAND, h.forward_to_ai))
 
     return app
+
+
+@platform_registry.register("telegram", force=True)
+class TelegramAdapter:
+    """Platform adapter for Telegram — registered in platform_registry for use by main.py."""
+
+    def __init__(self, settings: Settings, backend: AICLIBackend, storage, services, start_time: float, audit) -> None:
+        self._settings = settings
+        self._backend = backend
+        self._storage = storage
+        self._services = services
+        self._start_time = start_time
+        self._audit = audit
+
+    async def start(self) -> None:
+        import asyncio
+        import pathlib
+        import signal
+
+        _HEALTH_FILE = pathlib.Path("/tmp/healthy")
+        from src.ready_msg import build_ready_message
+
+        loop = asyncio.get_running_loop()
+        stop_event = asyncio.Event()
+
+        def _handle_sigterm(*_):
+            logger.info("Received SIGTERM, shutting down…")
+            self._backend.close()
+            loop.call_soon_threadsafe(stop_event.set)
+
+        signal.signal(signal.SIGTERM, _handle_sigterm)
+
+        p = _prefix(self._settings)
+        _ver_file = pathlib.Path(__file__).parent.parent / "VERSION"
+        version = _ver_file.read_text().strip() if _ver_file.exists() else "unknown"
+        ready_msg = build_ready_message(self._settings, version, p)
+
+        app = build_app(
+            self._settings, self._backend, self._storage,
+            self._start_time, self._audit, self._services,
+        )
+
+        async with app:
+            await app.bot.send_message(
+                chat_id=self._settings.telegram.chat_id,
+                text=ready_msg,
+                parse_mode="Markdown",
+            )
+            _HEALTH_FILE.touch()
+            await app.start()
+            await app.updater.start_polling(drop_pending_updates=True)
+            logger.info("Telegram bot is running. Press Ctrl+C to stop.")
+            await stop_event.wait()
+

@@ -116,8 +116,8 @@ class TestCmdRun:
         ctx = MagicMock()
         ctx.args = ["ls", "-la"]
 
-        with patch("src.bot.executor.run_shell", new=AsyncMock(return_value="output")) as mock_run, \
-             patch("src.bot.executor.is_destructive", return_value=False):
+        with patch("src.executor.run_shell", new=AsyncMock(return_value="output")) as mock_run, \
+             patch("src.executor.is_destructive", return_value=False):
             await h.cmd_run(update, ctx)
             mock_run.assert_awaited_once()
 
@@ -137,7 +137,7 @@ class TestCmdRun:
         ctx = MagicMock()
         ctx.args = ["git", "push"]
 
-        with patch("src.bot.executor.is_destructive", return_value=True):
+        with patch("src.executor.is_destructive", return_value=True):
             await h.cmd_run(update, ctx)
         msg = update.effective_message.reply_text.call_args
         assert msg is not None  # confirmation message sent
@@ -150,7 +150,7 @@ class TestCmdSync:
         h = _make_handlers()
         update = _make_update()
         ctx = MagicMock()
-        with patch("src.bot.repo.pull", new=AsyncMock(return_value="Already up to date.")):
+        with patch("src.repo.pull", new=AsyncMock(return_value="Already up to date.")):
             await h.cmd_sync(update, ctx)
         assert update.effective_message.reply_text.call_count >= 1
 
@@ -162,7 +162,7 @@ class TestCmdGit:
         h = _make_handlers()
         update = _make_update()
         ctx = MagicMock()
-        with patch("src.bot.repo.status", new=AsyncMock(return_value="M file.py\nabc1234 msg")):
+        with patch("src.repo.status", new=AsyncMock(return_value="M file.py\nabc1234 msg")):
             await h.cmd_git(update, ctx)
         assert update.effective_message.reply_text.call_count >= 1
 
@@ -296,7 +296,7 @@ class TestCallbackHandler:
         update.callback_query = query
         h._pending_cmds[(int("99999"), 1)] = "ls -la"
 
-        with patch("src.bot.executor.run_shell", new=AsyncMock(return_value="output")):
+        with patch("src.executor.run_shell", new=AsyncMock(return_value="output")):
             await h.callback_handler(update, MagicMock())
         query.edit_message_text.assert_awaited()
 
@@ -348,9 +348,6 @@ class TestCmdHelp:
         h = _make_handlers()
         update = _make_update()
         with patch.object(cfg, "VERSION", "9.9.9"):
-            import importlib, src.bot as bot_mod
-            importlib.reload(bot_mod)
-            # reload re-imports VERSION; just check string directly
             await h.cmd_help(update, MagicMock())
         text = update.effective_message.reply_text.call_args[0][0]
         assert "AgentGate" in text
@@ -410,7 +407,7 @@ class TestCmdRunConfirmation:
         update = _make_update(text="/trun rm -rf /tmp/foo")
         ctx = MagicMock()
         ctx.args = ["rm", "-rf", "/tmp/foo"]
-        with patch("src.bot.executor.run_shell", new=AsyncMock(return_value="done")):
+        with patch("src.executor.run_shell", new=AsyncMock(return_value="done")):
             await h.cmd_run(update, ctx)
         # reply_text called with result, not inline keyboard
         call_kwargs = update.effective_message.reply_text.call_args
@@ -422,7 +419,7 @@ class TestCmdRunConfirmation:
         update = _make_update(text="/trun rm -rf /tmp/foo")
         ctx = MagicMock()
         ctx.args = ["rm", "-rf", "/tmp/foo"]
-        with patch("src.bot.executor.run_shell", new=AsyncMock(return_value="done")):
+        with patch("src.executor.run_shell", new=AsyncMock(return_value="done")):
             await h.cmd_run(update, ctx)
         call_kwargs = update.effective_message.reply_text.call_args
         assert call_kwargs is not None
@@ -531,7 +528,7 @@ class TestCmdTa:
         update = _make_update()
         ctx = MagicMock()
         ctx.args = ["run", "ls", "-la"]
-        with patch("src.bot.executor.run_shell", new=AsyncMock(return_value="output")):
+        with patch("src.executor.run_shell", new=AsyncMock(return_value="output")):
             await h.cmd_ta(update, ctx)
         # ctx.args should have been rewritten to ["ls", "-la"]
         assert ctx.args == ["ls", "-la"]
@@ -564,7 +561,7 @@ class TestCmdDiff:
         update = _make_update()
         ctx = MagicMock()
         ctx.args = []
-        with patch("src.bot.executor.run_shell", new=AsyncMock(return_value="diff output")) as mock_run:
+        with patch("src.executor.run_shell", new=AsyncMock(return_value="diff output")) as mock_run:
             await h.cmd_diff(update, ctx)
         assert "HEAD~1 HEAD" in mock_run.call_args[0][0]
 
@@ -573,7 +570,7 @@ class TestCmdDiff:
         update = _make_update()
         ctx = MagicMock()
         ctx.args = ["3"]
-        with patch("src.bot.executor.run_shell", new=AsyncMock(return_value="diff")) as mock_run:
+        with patch("src.executor.run_shell", new=AsyncMock(return_value="diff")) as mock_run:
             await h.cmd_diff(update, ctx)
         assert "HEAD~3 HEAD" in mock_run.call_args[0][0]
 
@@ -582,7 +579,7 @@ class TestCmdDiff:
         update = _make_update()
         ctx = MagicMock()
         ctx.args = ["abc1234"]
-        with patch("src.bot.executor.run_shell", new=AsyncMock(return_value="diff")) as mock_run:
+        with patch("src.executor.run_shell", new=AsyncMock(return_value="diff")) as mock_run:
             await h.cmd_diff(update, ctx)
         assert "abc1234 HEAD" in mock_run.call_args[0][0]
 
@@ -591,7 +588,7 @@ class TestCmdDiff:
         update = _make_update()
         ctx = MagicMock()
         ctx.args = []
-        with patch("src.bot.executor.run_shell", new=AsyncMock(return_value="   ")):
+        with patch("src.executor.run_shell", new=AsyncMock(return_value="   ")):
             await h.cmd_diff(update, ctx)
         text = update.effective_message.reply_text.call_args[0][0]
         assert "no changes" in text
@@ -605,7 +602,7 @@ class TestCmdLog:
         update = _make_update()
         ctx = MagicMock()
         ctx.args = []
-        with patch("src.bot.executor.run_shell", new=AsyncMock(return_value="log lines")) as mock_run:
+        with patch("src.executor.run_shell", new=AsyncMock(return_value="log lines")) as mock_run:
             await h.cmd_log(update, ctx)
         assert "tail -n 20" in mock_run.call_args[0][0]
 
@@ -614,7 +611,7 @@ class TestCmdLog:
         update = _make_update()
         ctx = MagicMock()
         ctx.args = ["50"]
-        with patch("src.bot.executor.run_shell", new=AsyncMock(return_value="log")) as mock_run:
+        with patch("src.executor.run_shell", new=AsyncMock(return_value="log")) as mock_run:
             await h.cmd_log(update, ctx)
         assert "tail -n 50" in mock_run.call_args[0][0]
 
@@ -623,7 +620,7 @@ class TestCmdLog:
         update = _make_update()
         ctx = MagicMock()
         ctx.args = ["9999"]
-        with patch("src.bot.executor.run_shell", new=AsyncMock(return_value="log")) as mock_run:
+        with patch("src.executor.run_shell", new=AsyncMock(return_value="log")) as mock_run:
             await h.cmd_log(update, ctx)
         assert "tail -n 200" in mock_run.call_args[0][0]
 
@@ -661,7 +658,7 @@ class TestRunAiPipelineStreaming:
         update = _make_update()
 
         with patch("src.bot.asyncio.wait_for", new=AsyncMock(return_value="ok")) as mock_wait_for, \
-             patch("src.bot.executor.summarize_if_long", new=AsyncMock(return_value="ok")):
+             patch("src.executor.summarize_if_long", new=AsyncMock(return_value="ok")):
             await h._run_ai_pipeline(update, "hello", "99999")
 
         mock_wait_for.assert_awaited_once()

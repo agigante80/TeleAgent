@@ -4,6 +4,8 @@ from pathlib import Path
 
 import aiosqlite
 
+from src.registry import storage_registry
+
 HISTORY_LIMIT = 10  # exchanges to inject as context
 
 logger = logging.getLogger(__name__)
@@ -50,6 +52,7 @@ class ConversationStorage(ABC):
         ...
 
 
+@storage_registry.register("sqlite", force=True)
 class SQLiteStorage(ConversationStorage):
     """Default SQLite-backed conversation storage.
 
@@ -129,3 +132,28 @@ def build_context(history: list[tuple[str, str]], current: str) -> str:
     lines.append("</HISTORY>")
     lines.append(f"\nCurrent user message:\n{current}")
     return "\n".join(lines)
+
+
+@storage_registry.register("memory", force=True)
+class InMemoryStorage(ConversationStorage):
+    """Volatile in-memory storage for testing and forks without /data volume."""
+
+    def __init__(self, _db_path=None, max_entries_per_chat: int = 200) -> None:
+        self._store: dict[str, list] = {}
+        self._max = max_entries_per_chat
+
+    async def init(self) -> None:
+        pass
+
+    async def add_exchange(self, chat_id: str, user_msg: str, ai_msg: str) -> None:
+        bucket = self._store.setdefault(chat_id, [])
+        bucket.append((user_msg, ai_msg))
+        if len(bucket) > self._max:
+            del bucket[: len(bucket) - self._max]
+
+    async def get_history(self, chat_id: str, limit: int = HISTORY_LIMIT) -> list:
+        return self._store.get(chat_id, [])[-limit:]
+
+    async def clear(self, chat_id: str) -> None:
+        self._store.pop(chat_id, None)
+

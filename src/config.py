@@ -10,6 +10,9 @@ class TelegramConfig(BaseSettings):
     chat_id: str = Field(default="", alias="TG_CHAT_ID")
     allowed_users: list[int] = Field(default=[], alias="ALLOWED_USERS")
 
+    def secret_values(self) -> list[str]:
+        return [v for v in [self.bot_token] if v]
+
 
 class SlackConfig(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore")
@@ -22,6 +25,9 @@ class SlackConfig(BaseSettings):
     slack_delete_thinking: bool = Field(True, alias="SLACK_DELETE_THINKING")  # Delete ⏳ placeholder after posting final AI response
     slack_thread_replies: bool = Field(False, alias="SLACK_THREAD_REPLIES")   # Reply in a thread anchored to the triggering message
 
+    def secret_values(self) -> list[str]:
+        return [v for v in [self.slack_bot_token, self.slack_app_token] if v]
+
 
 class GitHubConfig(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore")
@@ -30,12 +36,18 @@ class GitHubConfig(BaseSettings):
     github_repo: str = ""
     branch: str = "main"
 
+    def secret_values(self) -> list[str]:
+        return [v for v in [self.github_repo_token] if v]
+
 
 class LogConfig(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore")
 
     log_level: str = "INFO"   # LOG_LEVEL: DEBUG|INFO|WARNING|ERROR
     log_dir: str = ""         # LOG_DIR: path to write rotating log files (empty = stdout only)
+
+    def secret_values(self) -> list[str]:
+        return []
 
 
 class BotConfig(BaseSettings):
@@ -61,6 +73,11 @@ class BotConfig(BaseSettings):
     ai_timeout_warn_secs: int = 60          # Seconds before hard timeout to include a cancellation warning; env: AI_TIMEOUT_WARN_SECS
     thinking_show_elapsed: bool = True      # THINKING_SHOW_ELAPSED: update "🤖 Thinking…" to "🤖 Thought for Xs" after AI responds; final response posted as new message
     allow_secrets: bool = False             # ALLOW_SECRETS=true disables secret redaction in outgoing messages
+    shell_allowlist: list[str] = []         # SHELL_ALLOWLIST: comma-separated permitted command names for `run` (empty = allow all)
+    shell_readonly: bool = False            # SHELL_READONLY=true: only read-only commands permitted in `run`
+
+    def secret_values(self) -> list[str]:
+        return []
 
 
 class CopilotAIConfig(BaseSettings):
@@ -121,11 +138,22 @@ class AIConfig(BaseSettings):
     codex: CodexAIConfig = Field(default_factory=CodexAIConfig)
     direct: DirectAIConfig = Field(default_factory=DirectAIConfig)
 
+    def secret_values(self) -> list[str]:
+        # codex_api_key lives on the nested CodexAIConfig sub-config (self.codex),
+        # not as a flat field on AIConfig.
+        return [v for v in [
+            self.ai_api_key,
+            self.codex.codex_api_key,
+        ] if v]
+
 
 class AuditConfig(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore")
 
     audit_enabled: bool = True  # AUDIT_ENABLED — set to false to disable audit logging
+
+    def secret_values(self) -> list[str]:
+        return []
 
 
 class VoiceConfig(BaseSettings):
@@ -134,6 +162,20 @@ class VoiceConfig(BaseSettings):
     whisper_provider: Literal["none", "openai", "local", "google"] = "none"
     whisper_api_key: str = ""  # Falls back to AIConfig.ai_api_key when provider=openai
     whisper_model: str = "whisper-1"  # For local Whisper: tiny|base|small|medium|large
+
+    def secret_values(self) -> list[str]:
+        return [v for v in [self.whisper_api_key] if v]
+
+
+class StorageConfig(BaseSettings):
+    """Storage and audit backend selection."""
+    model_config = SettingsConfigDict(extra="ignore")
+
+    storage_backend: Literal["sqlite", "memory"] = Field("sqlite", alias="STORAGE_BACKEND")
+    audit_backend: Literal["sqlite", "null"] = Field("sqlite", alias="AUDIT_BACKEND")
+
+    def secret_values(self) -> list[str]:
+        return []
 
 
 class Settings(BaseSettings):
@@ -148,6 +190,7 @@ class Settings(BaseSettings):
     voice: VoiceConfig = Field(default_factory=VoiceConfig)
     slack: SlackConfig = Field(default_factory=SlackConfig)
     audit: AuditConfig = Field(default_factory=AuditConfig)
+    storage: StorageConfig = Field(default_factory=StorageConfig)
 
     @classmethod
     def load(cls) -> "Settings":
@@ -160,6 +203,7 @@ class Settings(BaseSettings):
             voice=VoiceConfig(),
             slack=SlackConfig(),
             audit=AuditConfig(),
+            storage=StorageConfig(),
         )
 
 

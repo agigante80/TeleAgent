@@ -26,7 +26,7 @@ import re
 import time
 from contextlib import suppress
 
-from src import executor, repo, transcriber as transcriber_mod
+from src import transcriber as transcriber_mod
 from src.ai import factory as ai_factory
 from src.ai.adapter import AICLIBackend
 from src.audit import AuditLog, _ms_since
@@ -36,6 +36,7 @@ from src.platform import common
 from src.platform.common import thinking_ticker, split_text
 from src.ready_msg import build_ready_message, ai_label as _ai_label
 from src.redact import SecretRedactor
+from src.registry import platform_registry
 
 logger = logging.getLogger(__name__)
 
@@ -124,6 +125,7 @@ def _init_transcriber(
         return None
 
 
+@platform_registry.register("slack", force=True)
 class SlackBot:
     """
     Slack bot that mirrors AgentGate's Telegram functionality.
@@ -132,7 +134,7 @@ class SlackBot:
     """
 
     def __init__(
-        self, settings: Settings, backend: AICLIBackend, storage: ConversationStorage, start_time: float, audit: AuditLog
+        self, settings: Settings, backend: AICLIBackend, storage: ConversationStorage, services=None, start_time: float = 0.0, audit: AuditLog | None = None
     ) -> None:
         from slack_bolt.async_app import AsyncApp
 
@@ -140,7 +142,8 @@ class SlackBot:
         self._backend = backend
         self._history = storage
         self._start_time = start_time
-        self._audit = audit
+        from src.audit import NullAuditLog
+        self._audit = audit if audit is not None else NullAuditLog()
         self._p = _prefix(settings)
         # (channel, ts) -> pending shell command awaiting confirmation
         self._pending_cmds: dict[tuple[str, str], str] = {}
@@ -151,6 +154,19 @@ class SlackBot:
         self._redactor = SecretRedactor(settings)
         # per-channel asyncio Task registry for user-initiated cancellation
         self._active_tasks: dict[str, asyncio.Task] = {}
+        if services is None:
+            from src.services import Services, ShellService, RepoService
+            services = Services(
+                shell=ShellService(max_chars=settings.bot.max_output_chars, redactor=self._redactor),
+                repo=RepoService(
+                    token=settings.github.github_repo_token,
+                    repo_name=settings.github.github_repo,
+                    branch=settings.github.branch,
+                ),
+                redactor=self._redactor,
+                transcriber=None,
+            )
+        self._services = services
         # Parse TRUSTED_AGENT_BOT_IDS entries as "Name:prefix" or "Name" or "B-prefixed-id".
         # B-prefixed entries are pre-populated; name-based entries are resolved at startup.
         import re
@@ -556,8 +572,8 @@ class SlackBot:
                     with suppress(asyncio.CancelledError):
                         await ticker
                 elapsed = int(time.monotonic() - t_start)
-                response = await executor.summarize_if_long(
-                    response, self._settings.bot.max_output_chars, self._backend
+                response = await self._services.shell.summarize_if_long(
+                    response, self._backend
                 )
                 response, delegations = _extract_delegations(response)
                 if self._settings.slack.slack_delete_thinking:
@@ -733,41 +749,50 @@ class SlackBot:
         user_id: str | None = None,
     ) -> None:
         table = {
-            "run": self._cmd_run,
-            "sync": self._cmd_sync,
-            "git": self._cmd_git,
-            "diff": self._cmd_diff,
-            "log": self._cmd_log,
-            "status": self._cmd_status,
-            "clear": self._cmd_clear,
-            "restart": self._cmd_restart,
-            "confirm": self._cmd_confirm,
-            "info": self._cmd_info,
-            "help": self._cmd_help,
-            "init": self._cmd_init,
+            "run": self.cmd_run,
+            "sync": self.cmd_sync,
+            "git": self.cmd_git,
+            "diff": self.cmd_diff,
+            "log": self.cmd_log,
+            "status": self.cmd_status,
+            "clear": self.cmd_clear,
+            "restart": self.cmd_restart,
+            "confirm": self.cmd_confirm,
+            "info": self.cmd_info,
+            "help": self.cmd_help,
+            "init": self.cmd_init,
             "cancel": self._handle_cancel,
         }
         handler = table.get(sub)
         if handler is None:
             if sub:
                 await self._reply(client, channel, f"❓ Unknown command: `{sub}`", thread_ts)
-            await self._cmd_help([], say, client, channel, thread_ts=thread_ts, user_id=user_id)
+            await self.cmd_help([], say, client, channel, thread_ts=thread_ts, user_id=user_id)
             return
         await handler(args, say, client, channel, thread_ts=thread_ts, user_id=user_id)
 
     # ── Utility commands ──────────────────────────────────────────────────
 
-    async def _cmd_run(
+    async def cmd_run(
         self, args: list[str], say, client, channel: str, *, thread_ts: str | None = None, user_id: str | None = None
     ) -> None:
         cmd = " ".join(args)
         if not cmd:
             await self._reply(client, channel, f"Usage: `{self._p} run <shell command>`", thread_ts)
             return
+        block_reason = self._services.shell.validate_command(cmd)
+        if block_reason:
+            await self._reply(client, channel, block_reason, thread_ts)
+            await self._audit.record(
+                platform="slack", chat_id=channel, user_id=user_id,
+                action="shell_exec", status="blocked",
+                detail={"cmd": self._redactor.redact(cmd), "reason": block_reason},
+            )
+            return
         needs_confirm = (
             self._confirm_destructive
-            and executor.is_destructive(cmd)
-            and not executor.is_exempt(cmd, self._settings.bot.skip_confirm_keywords)
+            and self._services.shell.is_destructive(cmd)
+            and not self._services.shell.is_exempt(cmd, self._settings.bot.skip_confirm_keywords)
         )
         if needs_confirm:
             blocks = [
@@ -808,9 +833,7 @@ class SlackBot:
         else:
             t0 = time.time()
             await self._reply(client, channel, "⏳ Running…", thread_ts)
-            result = await executor.run_shell(
-                cmd, self._settings.bot.max_output_chars, self._redactor
-            )
+            result = await self._services.shell.run(cmd)
             await self._reply(client, channel, f"```\n{result}\n```", thread_ts)
             await self._audit.record(
                 platform="slack", chat_id=channel, user_id=user_id,
@@ -819,20 +842,20 @@ class SlackBot:
                 duration_ms=_ms_since(t0),
             )
 
-    async def _cmd_sync(
+    async def cmd_sync(
         self, args: list[str], say, client, channel: str, *, thread_ts: str | None = None, user_id: str | None = None
     ) -> None:
         await self._reply(client, channel, "⏳ Pulling latest changes…", thread_ts)
-        result = await repo.pull()
+        result = await self._services.repo.pull()
         await self._reply(client, channel, f"✅ Synced\n{result}", thread_ts)
 
-    async def _cmd_git(
+    async def cmd_git(
         self, args: list[str], say, client, channel: str, *, thread_ts: str | None = None, user_id: str | None = None
     ) -> None:
-        result = await repo.status()
+        result = await self._services.repo.status()
         await self._reply(client, channel, f"```\n{result}\n```", thread_ts)
 
-    async def _cmd_diff(
+    async def cmd_diff(
         self, args: list[str], say, client, channel: str, *, thread_ts: str | None = None, user_id: str | None = None
     ) -> None:
         arg = args[0] if args else ""
@@ -841,19 +864,17 @@ class SlackBot:
         elif arg.isdigit():
             ref = f"HEAD~{arg} HEAD"
         else:
-            safe = executor.sanitize_git_ref(arg)
+            safe = self._services.shell.sanitize_ref(arg)
             if safe is None:
                 await self._reply(client, channel, "❌ Invalid git ref — use a branch name, tag, or commit SHA.", thread_ts)
                 return
             ref = f"{safe} HEAD"
-        result = await executor.run_shell(
+        result = await self._services.shell.run(
             f"git diff {ref} --stat && echo '---' && git diff {ref}",
-            self._settings.bot.max_output_chars,
-            self._redactor,
         )
         await self._reply(client, channel, f"```\n{result or '(no changes)'}\n```", thread_ts)
 
-    async def _cmd_log(
+    async def cmd_log(
         self, args: list[str], say, client, channel: str, *, thread_ts: str | None = None, user_id: str | None = None
     ) -> None:
         try:
@@ -866,18 +887,16 @@ class SlackBot:
                 thread_ts,
             )
             return
-        result = await executor.run_shell(
+        result = await self._services.shell.run(
             (
                 f"tail -n {n} /proc/1/fd/1 2>/dev/null"
                 f" || journalctl -n {n} --no-pager 2>/dev/null"
                 f" || echo '(log not accessible)'"
             ),
-            self._settings.bot.max_output_chars,
-            self._redactor,
         )
         await self._reply(client, channel, f"```\n{result}\n```", thread_ts)
 
-    async def _cmd_status(
+    async def cmd_status(
         self, args: list[str], say, client, channel: str, *, thread_ts: str | None = None, user_id: str | None = None
     ) -> None:
         if self._active_ai:
@@ -889,7 +908,7 @@ class SlackBot:
         else:
             await self._reply(client, channel, "✅ AI is idle — ready for your next message.", thread_ts)
 
-    async def _cmd_confirm(
+    async def cmd_confirm(
         self, args: list[str], say, client, channel: str, *, thread_ts: str | None = None, user_id: str | None = None
     ) -> None:
         arg = (args[0].lower() if args else "").strip()
@@ -919,7 +938,7 @@ class SlackBot:
             )
             await self._reply(client, channel, f"Confirmation prompts: *{state}* ({source}){skipped}", thread_ts)
 
-    async def _cmd_clear(
+    async def cmd_clear(
         self, args: list[str], say, client, channel: str, *, thread_ts: str | None = None, user_id: str | None = None
     ) -> None:
         if self._settings.bot.history_enabled:
@@ -931,7 +950,7 @@ class SlackBot:
             action="command", detail={"sub": "clear"},
         )
 
-    async def _cmd_init(
+    async def cmd_init(
         self, args: list[str], say, client, channel: str, *, thread_ts: str | None = None, user_id: str | None = None
     ) -> None:
         """Clear history and forward `/init` to the AI with no prior context.
@@ -949,7 +968,7 @@ class SlackBot:
         )
         await self._run_ai_pipeline(say, client, "/init", channel, thread_ts=thread_ts)
 
-    async def _cmd_restart(
+    async def cmd_restart(
         self, args: list[str], say, client, channel: str, *, thread_ts: str | None = None, user_id: str | None = None
     ) -> None:
         await self._reply(client, channel, "🔄 Restarting AI backend…", thread_ts)
@@ -970,7 +989,7 @@ class SlackBot:
                 detail={"sub": "restart", "error": str(exc)},
             )
 
-    async def _cmd_help(
+    async def cmd_help(
         self, args: list[str], say, client, channel: str, *, thread_ts: str | None = None, user_id: str | None = None
     ) -> None:
         p = self._p
@@ -997,7 +1016,7 @@ class SlackBot:
         )
         await self._reply(client, channel, text, thread_ts)
 
-    async def _cmd_info(
+    async def cmd_info(
         self, args: list[str], say, client, channel: str, *, thread_ts: str | None = None, user_id: str | None = None
     ) -> None:
         uptime_s = int(time.time() - self._start_time)
@@ -1040,12 +1059,19 @@ class SlackBot:
             )
             return
         t0 = time.time()
+        block_reason = self._services.shell.validate_command(cmd)
+        if block_reason:
+            await client.chat_update(channel=channel, ts=ts, text=block_reason, blocks=[])
+            await self._audit.record(
+                platform="slack", chat_id=channel, user_id=user_id,
+                action="shell_confirm", status="blocked",
+                detail={"cmd": self._redactor.redact(cmd), "reason": block_reason},
+            )
+            return
         await client.chat_update(
             channel=channel, ts=ts, text=f"⏳ Running:\n```{cmd}```", blocks=[]
         )
-        result = await executor.run_shell(
-            cmd, self._settings.bot.max_output_chars, self._redactor
-        )
+        result = await self._services.shell.run(cmd)
         await self._reply(client, channel, f"```\n{result}\n```", None)
         await self._audit.record(
             platform="slack", chat_id=channel, user_id=user_id,
@@ -1272,3 +1298,24 @@ class SlackBot:
         if client is None:
             client = self._app.client
         await client.chat_postMessage(channel=channel, text=text)
+
+    async def start(self) -> None:
+        """Start the Slack bot: send ready message then begin Socket Mode."""
+        import asyncio
+        import pathlib
+        import signal
+
+        _HEALTH_FILE = pathlib.Path("/tmp/healthy")
+        loop = asyncio.get_running_loop()
+        stop_event = asyncio.Event()
+
+        def _handle_sigterm(*_):
+            logger.info("Received SIGTERM, shutting down…")
+            self._backend.close()
+            loop.call_soon_threadsafe(stop_event.set)
+
+        signal.signal(signal.SIGTERM, _handle_sigterm)
+        await self.send_ready_message()
+        _HEALTH_FILE.touch()
+        logger.info("Slack bot is running. Press Ctrl+C to stop.")
+        await self.run_async()

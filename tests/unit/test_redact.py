@@ -82,6 +82,38 @@ class TestPatternRedaction:
         result = redactor.redact(text)
         assert "[REDACTED]" in result
 
+    def test_openai_proj_key_redacted(self):
+        settings = _make_settings()
+        redactor = SecretRedactor(settings)
+        text = "key=sk-proj-abc123def456ghi789jkl0mnopqr rest"
+        result = redactor.redact(text)
+        assert "[REDACTED]" in result
+        assert "sk-proj-" not in result
+
+    def test_openai_org_key_redacted(self):
+        settings = _make_settings()
+        redactor = SecretRedactor(settings)
+        text = "key=sk-org-xyz987uvw654rst321qpo098 rest"
+        result = redactor.redact(text)
+        assert "[REDACTED]" in result
+        assert "sk-org-" not in result
+
+    def test_openai_svcacct_key_redacted(self):
+        settings = _make_settings()
+        redactor = SecretRedactor(settings)
+        text = "AI_API_KEY=sk-svcacct-abc123def456ghi789jkl0mnopqr"
+        result = redactor.redact(text)
+        assert "[REDACTED]" in result
+        assert "sk-svcacct-" not in result
+
+    def test_anthropic_key_redacted(self):
+        settings = _make_settings()
+        redactor = SecretRedactor(settings)
+        text = "ANTHROPIC_KEY=sk-ant-api03-abc123def456ghi789jkl0mn rest"
+        result = redactor.redact(text)
+        assert "[REDACTED]" in result
+        assert "sk-ant-api03-" not in result
+
     def test_url_with_creds_redacted(self):
         settings = _make_settings()
         redactor = SecretRedactor(settings)
@@ -95,6 +127,19 @@ class TestPatternRedaction:
         redactor = SecretRedactor(settings)
         text = "No secrets here. Just normal text."
         assert redactor.redact(text) == text
+
+    def test_short_sk_strings_not_redacted(self):
+        settings = _make_settings()
+        redactor = SecretRedactor(settings)
+        short_strings = [
+            "sk-test",
+            "sk-proj-short",
+            "sk-org-abc",
+            "sk-ant-api03-brief",
+            "config key sk-mode is fine",
+        ]
+        for text in short_strings:
+            assert redactor.redact(text) == text, f"Short sk- string was incorrectly redacted: {text!r}"
 
 
 class TestKnownValueRedaction:
@@ -146,3 +191,29 @@ class TestRedactGitCommitCmd:
         secret = "ghp_" + "A" * 36
         cmd = f'git commit -m "token {secret}"'
         assert redactor.redact_git_commit_cmd(cmd) == cmd
+
+
+class TestSecretProvider:
+    def test_telegram_config_satisfies_protocol(self):
+        from src.redact import SecretProvider
+        from src.config import TelegramConfig
+        cfg = TelegramConfig()
+        assert isinstance(cfg, SecretProvider)
+
+    def test_collect_secrets_via_protocol(self):
+        """_collect_secrets picks up values via secret_values() on each sub-config."""
+        from src.config import Settings, TelegramConfig, BotConfig
+        s = Settings()
+        # Inject a real telegram config with a token
+        s.telegram = TelegramConfig(TG_BOT_TOKEN="ghp_" + "A" * 36)
+        secrets = SecretRedactor._collect_secrets(s)
+        assert "ghp_" + "A" * 36 in secrets
+
+    def test_new_config_field_no_redact_edit(self, monkeypatch):
+        """Adding a field to secret_values() on sub-config works without touching redact.py."""
+        from src.config import GitHubConfig, Settings
+        long_token = "ghp_" + "B" * 36
+        monkeypatch.setenv("GITHUB_REPO_TOKEN", long_token)
+        s = Settings()
+        secrets = SecretRedactor._collect_secrets(s)
+        assert long_token in secrets
