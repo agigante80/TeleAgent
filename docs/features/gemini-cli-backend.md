@@ -96,15 +96,19 @@ platform settings remain unchanged.
   stripping needed in AgentGate code.
 - **Model selection** — if `AI_MODEL` is set, pass it via `--model <value>`.
   The shorthand is `-m`. If unset, the CLI uses its own default.
-- **Extra opts** — `AI_CLI_OPTS` is split with `shlex` and appended verbatim,
-  exactly as `CodexBackend` does. When set, it **replaces** the default
-  `--non-interactive` flag, so users must include it explicitly.
+- **Extra opts** — `AI_CLI_OPTS` is split with `shlex` and appended after the
+  mandatory safety flags (`--non-interactive --no-tools`), exactly as an additive
+  extension. The safety flags cannot be removed via `AI_CLI_OPTS`. To enable
+  Gemini's built-in tool use deliberately, set `AI_CLI_OPTS=--yolo`.
 - **Timeout** — `send()` applies a 180s hard timeout (same as `CopilotSession`)
   to prevent the process hanging if the API is unavailable.
-- **Tool use / MCP** — Gemini CLI supports web search, shell execution, and MCP
-  servers by default. These can conflict with AgentGate's own `executor.py`.
-  Disable with `AI_CLI_OPTS=--non-interactive --no-tools` (verify flag name at
-  implementation time; alternatively `--tool-discovery-enabled=false`).
+- **Tool use / MCP** — `--no-tools` is included in the default safety flags
+  alongside `--non-interactive`. Gemini's built-in tools (web search, shell
+  execution, file writes) bypass AgentGate's `SHELL_ALLOWLIST`, `is_destructive()`,
+  confirmation dialogs, and audit logging entirely — they must be disabled by
+  default. If an operator deliberately wants tool use, they can set
+  `AI_CLI_OPTS=--yolo` (auto-approves tool calls); `--non-interactive` and
+  `--no-tools` remain prepended and cannot be overridden via `AI_CLI_OPTS`.
 - **Working directory** — `SubprocessMixin._spawn()` runs in `REPO_DIR` (`/repo`),
   so Gemini can access project files via the `@filename` syntax.
 - **`clear_history()`** — no-op (inherited from `AICLIBackend` base class).
@@ -130,7 +134,7 @@ platform settings remain unchanged.
 
 - **`is_stateful = False`** — `GeminiBackend` must be stateless, mirroring `CopilotBackend`. History context is injected by `build_prompt()` in `platform/common.py`; the backend never manages its own history.
 - **`SubprocessMixin`** — use `SubprocessMixin` from `src/ai/adapter.py` to run the subprocess in `REPO_DIR`. Study `CopilotBackend` as the reference implementation.
-- **`--non-interactive` is mandatory** — always include it; do not allow `AI_CLI_OPTS` to omit it unless explicitly documented. Without it, the CLI hangs on auth dialogs in Docker.
+- **`--non-interactive` and `--no-tools` are mandatory safety flags** — always prepend both; `AI_CLI_OPTS` is additive (not replacing). Without `--non-interactive` the CLI hangs on auth dialogs in Docker. Without `--no-tools`, Gemini's built-in shell/file/web tools bypass `SHELL_ALLOWLIST`, `is_destructive()`, confirmation dialogs, and audit logging entirely.
 - **Exit code handling** — exit code 0 = success; 1 = general error; 42 = invalid input; 53 = turn limit exceeded. Map non-zero codes to user-facing error messages (don't silently return empty output).
 - **API key validation** — when `AI_CLI=gemini`, `GEMINI_API_KEY` must be non-empty. Add a check in `_validate_config()` in `src/main.py` — same pattern as the Telegram/Slack token checks.
 - **Timeout interaction** — if the AI response feedback feature (`docs/features/ai-response-feedback.md`) is implemented first, the platform-layer timeout replaces the internal 180s timeout. Coordinate: do not add a new internal `asyncio.wait_for()` inside `GeminiBackend` if the platform already wraps it.
@@ -151,17 +155,19 @@ History is injected by the bot layer via build_prompt() (stateless pattern).
 """
 import asyncio
 import logging
-import os
 import shlex
 from collections.abc import AsyncGenerator
 
 from src.ai.adapter import AICLIBackend, SubprocessMixin
+from src.executor import scrubbed_env
+from src.registry import backend_registry
 
 logger = logging.getLogger(__name__)
 
 TIMEOUT = 180  # seconds — same as CopilotSession
 
 
+@backend_registry.register("gemini")
 class GeminiBackend(SubprocessMixin, AICLIBackend):
     """Stateless backend using Google's official Gemini CLI."""
 
@@ -173,10 +179,14 @@ class GeminiBackend(SubprocessMixin, AICLIBackend):
         self._opts = opts
 
     def _make_cmd(self, prompt: str) -> tuple[list[str], dict]:
-        env = {**os.environ, "GEMINI_API_KEY": self._api_key}
+        env = {**scrubbed_env(), "GEMINI_API_KEY": self._api_key}
+        # Always prepend safety flags — never allow AI_CLI_OPTS to override them.
         # --non-interactive: prevents auth dialogs and interactive prompts in headless mode.
-        # This is distinct from --yolo (which auto-approves built-in tool calls).
-        extra = shlex.split(self._opts) if self._opts else ["--non-interactive"]
+        # --no-tools: disables Gemini's built-in shell exec, file writes, and web search, which
+        #   would otherwise bypass AgentGate's SHELL_ALLOWLIST, is_destructive() checks,
+        #   confirmation dialogs, and audit logging entirely.
+        safety_flags = ["--non-interactive", "--no-tools"]
+        extra = safety_flags + (shlex.split(self._opts) if self._opts else [])
         cmd = ["gemini", "-p", prompt] + extra
         if self._model:
             cmd += ["--model", self._model]
@@ -190,6 +200,7 @@ class GeminiBackend(SubprocessMixin, AICLIBackend):
         except asyncio.TimeoutError:
             try:
                 proc.kill()  # type: ignore[possibly-undefined]
+                await proc.wait()  # reap zombie — prevent defunct gemini processes
             except Exception:
                 pass
             return f"⚠️ Gemini timed out after {TIMEOUT}s."
@@ -238,9 +249,11 @@ class GeminiBackend(SubprocessMixin, AICLIBackend):
 
 | File | Change | Notes |
 |------|--------|-------|
-| `src/ai/gemini.py` | **New** — `GeminiBackend` class (see above) | ~70 lines |
-| `src/ai/factory.py` | Add `if ai.ai_cli == "gemini":` branch | 5 lines |
-| `src/config.py` | Extend `AIConfig`: `ai_cli` Literal + `gemini_api_key` field | 2 lines |
+| `src/ai/gemini.py` | **New** — `GeminiBackend` class (see above) | ~75 lines |
+| `src/ai/factory.py` | Add `gemini` branch + `_load_backends()` entry | ~10 lines |
+| `src/config.py` | Extend `AIConfig`: `ai_cli` Literal + `gemini_api_key` field + `secret_values()` | 4 lines |
+| `src/executor.py` | Add `GEMINI_API_KEY`, `GOOGLE_API_KEY` to `_SECRET_ENV_KEYS` | 2 lines |
+| `src/redact.py` | Add Google API key regex (`AIza...`) to `_SECRET_PATTERNS` | 1 line |
 | `Dockerfile` | Add `npm install -g @google/gemini-cli` (Node.js **already present**) | 1 line |
 | `README.md` | Add `gemini` to `AI_CLI` row; add `GEMINI_API_KEY` row (×2 — Telegram + Slack sections) | ~4 lines |
 | `tests/unit/test_gemini_backend.py` | **New** — unit tests (see below) | ~80 lines |
@@ -273,13 +286,90 @@ The `gemini_api_key` field reads from `GEMINI_API_KEY` (Pydantic auto-maps field
 name to env var in uppercase). The factory falls back to `ai_api_key` (`AI_API_KEY`)
 so users who already have a generic key set don't need a duplicate.
 
-### Step 2 — `src/ai/gemini.py`
+Also update `AIConfig.secret_values()` to include the new key so `SecretRedactor`
+scrubs it from all outgoing text (AI responses, error messages, shell output):
+
+```python
+# Before:
+def secret_values(self) -> list[str]:
+    return [v for v in [self.ai_api_key, self.codex.codex_api_key] if v]
+
+# After:
+def secret_values(self) -> list[str]:
+    return [v for v in [
+        self.ai_api_key,
+        self.codex.codex_api_key,
+        self.gemini_api_key,   # ← add — prevents GEMINI_API_KEY leaking in logs/responses
+    ] if v]
+```
+
+> ⚠️ **Critical**: if `gemini_api_key` is not in `secret_values()`, the key will
+> pass through `SecretRedactor` unredacted in every AI response and error message.
+> This is not protected by the pattern-based `_SECRET_PATTERNS` alone (which only
+> covers the `AIza...` regex — see Step 2b below).
+
+### Step 2b — `src/executor.py` and `src/redact.py` (secret protection)
+
+#### `src/executor.py` — extend `_SECRET_ENV_KEYS`
+
+Add `GEMINI_API_KEY` and `GOOGLE_API_KEY` to the denylist so `scrubbed_env()`
+strips them before passing environment to any subprocess. Without this, any
+subprocess spawned by AgentGate (shell commands, executor runs) can read these
+keys from the environment even though `GeminiBackend._make_cmd()` only re-injects
+`GEMINI_API_KEY` for its own subprocess.
+
+```python
+# Before:
+_SECRET_ENV_KEYS: frozenset[str] = frozenset({
+    "TG_BOT_TOKEN",
+    "SLACK_BOT_TOKEN",
+    "SLACK_APP_TOKEN",
+    "GITHUB_REPO_TOKEN",
+    "AI_API_KEY",
+    "CODEX_API_KEY",
+    "WHISPER_API_KEY",
+    "OPENAI_API_KEY",
+})
+
+# After — add both Google key names (CLI accepts either):
+_SECRET_ENV_KEYS: frozenset[str] = frozenset({
+    "TG_BOT_TOKEN",
+    "SLACK_BOT_TOKEN",
+    "SLACK_APP_TOKEN",
+    "GITHUB_REPO_TOKEN",
+    "AI_API_KEY",
+    "CODEX_API_KEY",
+    "WHISPER_API_KEY",
+    "OPENAI_API_KEY",
+    "GEMINI_API_KEY",   # ← add (F2)
+    "GOOGLE_API_KEY",   # ← add (F6) — Gemini CLI also accepts this alternative name
+})
+```
+
+#### `src/redact.py` — extend `_SECRET_PATTERNS`
+
+Add a pattern for Google AI Studio API keys (prefix `AIza`, 39 characters total)
+so that any key that appears in AI output or error messages is pattern-matched and
+redacted even if it was not captured in `secret_values()`:
+
+```python
+# Add to _SECRET_PATTERNS list (after the Anthropic key line):
+re.compile(r"AIza[0-9A-Za-z_\-]{35}"),  # Google API key (AI Studio / GCP)
+```
+
+> ℹ️ Google API keys always start with `AIza` followed by exactly 35 alphanumeric,
+> underscore, or hyphen characters (39 chars total). This pattern is stable across
+> all current Google API key types including AI Studio keys.
+
+### Step 3 — `src/ai/gemini.py`
 
 Create the file with the implementation shown in the Architecture section above.
 
-### Step 3 — `src/ai/factory.py`
+### Step 4 — `src/ai/factory.py`
 
-Add the `gemini` branch before the final `raise ValueError`:
+Two changes are required:
+
+**1. Add the `gemini` branch** before the final `raise ValueError`:
 
 ```python
     if ai.ai_cli == "gemini":
@@ -291,7 +381,27 @@ Add the `gemini` branch before the final `raise ValueError`:
         )
 ```
 
-### Step 4 — `Dockerfile`
+**2. Add `src.ai.gemini` to `_load_backends()`** so the registry decorator fires:
+
+```python
+# Before:
+def _load_backends() -> None:
+    _module_file_exists("src.ai.copilot") and __import__("src.ai.copilot")
+    _module_file_exists("src.ai.codex") and __import__("src.ai.codex")
+    _module_file_exists("src.ai.direct") and __import__("src.ai.direct")
+
+# After:
+def _load_backends() -> None:
+    _module_file_exists("src.ai.copilot") and __import__("src.ai.copilot")
+    _module_file_exists("src.ai.codex") and __import__("src.ai.codex")
+    _module_file_exists("src.ai.direct") and __import__("src.ai.direct")
+    _module_file_exists("src.ai.gemini") and __import__("src.ai.gemini")   # ← add
+```
+
+Without this, the `@backend_registry.register("gemini")` decorator in `gemini.py`
+never fires and `backend_registry.create("gemini", ...)` raises `KeyError`.
+
+### Step 5 — `Dockerfile`
 
 Node.js is **already installed** in the base image via the NodeSource block. Only
 add the Gemini CLI global install, alongside the existing Copilot and Codex lines:
@@ -317,7 +427,7 @@ RUN npm install -g @google/gemini-cli@<latest-version>
 > and Codex CLIs. Adding `@google/gemini-cli` adds only ~50–100 MB (the npm
 > package itself). The optional build-arg approach is unnecessary here.
 
-### Step 5 — `README.md`
+### Step 6 — `README.md`
 
 Two tables must be updated (Telegram section ≈ line 158, Slack section ≈ line 447):
 
@@ -344,7 +454,7 @@ Two tables must be updated (Telegram section ≈ line 158, Slack section ≈ lin
 ... (Copilot: `--allow-all`; Codex: `--approval-mode full-auto`; Gemini: `--non-interactive`) ...
 ```
 
-### Step 6 — Tests
+### Step 7 — Tests
 
 #### `tests/unit/test_gemini_backend.py` (new file)
 
@@ -411,11 +521,25 @@ class TestMakeCmd:
         cmd, _ = b._make_cmd("hello")
         assert "--non-interactive" in cmd
 
+    def test_default_cmd_has_no_tools(self):
+        b = GeminiBackend(api_key="k")
+        cmd, _ = b._make_cmd("hello")
+        assert "--no-tools" in cmd
+
     def test_prompt_in_cmd(self):
         b = GeminiBackend(api_key="k")
         cmd, _ = b._make_cmd("my prompt")
         assert "-p" in cmd
         assert "my prompt" in cmd
+
+    def test_env_does_not_contain_other_secrets(self):
+        """scrubbed_env() must have stripped other AgentGate secrets from the env."""
+        import os
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "sk-secret", "SLACK_BOT_TOKEN": "xoxb-secret"}):
+            b = GeminiBackend(api_key="AIzaXYZ")
+            _, env = b._make_cmd("hello")
+        assert "OPENAI_API_KEY" not in env
+        assert "SLACK_BOT_TOKEN" not in env
 
     def test_env_contains_api_key(self):
         b = GeminiBackend(api_key="AIzaXYZ")
@@ -433,19 +557,21 @@ class TestMakeCmd:
         cmd, _ = b._make_cmd("hi")
         assert "--model" not in cmd
 
-    def test_opts_replaces_non_interactive(self):
-        b = GeminiBackend(api_key="k", opts="--non-interactive --yolo")
+    def test_custom_opts_appended_after_safety_flags(self):
+        """Safety flags are always prepended; custom opts are additive, not replacing."""
+        b = GeminiBackend(api_key="k", opts="--yolo")
         cmd, _ = b._make_cmd("hi")
-        assert "--yolo" in cmd
-        # opts replaces defaults, so --non-interactive comes from opts
-        assert cmd.count("--non-interactive") == 1
+        assert "--non-interactive" in cmd  # always present
+        assert "--no-tools" in cmd          # always present
+        assert "--yolo" in cmd              # user opts appended
 
     def test_custom_opts_parsed_with_shlex(self):
         b = GeminiBackend(api_key="k", opts="--debug --sandbox")
         cmd, _ = b._make_cmd("hi")
         assert "--debug" in cmd
         assert "--sandbox" in cmd
-        assert "--non-interactive" not in cmd  # custom opts replaces defaults
+        assert "--non-interactive" in cmd  # still present — safety flag not replaced
+        assert "--no-tools" in cmd          # still present — safety flag not replaced
 
 
 # ── send() ─────────────────────────────────────────────────────────────────────
@@ -582,7 +708,7 @@ def test_gemini_model_passed_through(self, monkeypatch):
 | 2 | **`--yolo` flag** | ⚠️ Optional | Auto-approves built-in tool calls (web search, shell). Separate from non-interactive mode. Only needed if Gemini tool use is desired; keep disabled by default. |
 | 3 | **ANSI codes in output** | ✅ Non-issue | CLI auto-strips ANSI when stdout is not a TTY. `asyncio.create_subprocess_exec` always pipes stdout. |
 | 4 | **Streaming is buffered or progressive?** | 🔍 Verify at impl | Test whether `gemini -p "…" --non-interactive` streams progressively or buffers. If buffered, only `send()` is meaningful; `stream()` can delegate to `send()`. |
-| 5 | **Built-in tool calls interfere with executor?** | 🔍 Verify at impl | Gemini's built-in tools (web search, shell exec) may attempt to modify files in `REPO_DIR`. Recommend `--no-tools` or equivalent flag to disable. Verify flag name from `gemini --help`. |
+| 5 | **Built-in tool calls interfere with executor?** | ✅ Resolved — disabled by default | `--no-tools` is prepended as a mandatory safety flag. Gemini's built-in tools (web search, shell exec, file writes) would bypass `SHELL_ALLOWLIST`, `is_destructive()`, confirmation dialogs, and audit logging. Operators who want tool use must set `AI_CLI_OPTS=--yolo` explicitly. |
 | 6 | **Trailing footer?** | 🔍 Verify at impl | Copilot CLI appends `Total usage est: …` which `CopilotSession` strips. Check whether Gemini CLI appends similar metadata and strip if needed. |
 | 7 | **Turn limit (rc=53)** | ✅ Documented | Exit code 53 = turn limit exceeded. Handled in `send()` and `stream()` with labelled error messages. |
 | 8 | **`GOOGLE_API_KEY` vs `GEMINI_API_KEY`** | ✅ Clarified | Both accepted by the CLI. AgentGate uses `GEMINI_API_KEY` field (reads `GEMINI_API_KEY` env var) for clarity; `GOOGLE_API_KEY` works as a silent fallback if the CLI prefers it. |
@@ -628,16 +754,19 @@ The detailed test implementations are embedded in the Architecture section (`tes
 |------|----------------|
 | `test_not_stateful` | `GeminiBackend.is_stateful == False` |
 | `test_default_cmd_has_non_interactive` | `--non-interactive` always present in subprocess args |
+| `test_default_cmd_has_no_tools` | `--no-tools` always present — Gemini's built-in tools disabled by default |
 | `test_prompt_in_cmd` | Prompt passed as `-p <value>` |
-| `test_env_contains_api_key` | `GEMINI_API_KEY` is set in subprocess env |
+| `test_env_does_not_contain_other_secrets` | `scrubbed_env()` strips other AgentGate secrets from subprocess env |
+| `test_env_contains_api_key` | `GEMINI_API_KEY` is re-injected in subprocess env |
 | `test_model_flag_added_when_set` | `--model <value>` added when `AI_MODEL` is non-empty |
 | `test_model_flag_absent_when_empty` | No `--model` flag when `AI_MODEL` is empty |
-| `test_opts_replaces_non_interactive` | `AI_CLI_OPTS` replaces the default `--non-interactive` |
+| `test_custom_opts_appended_after_safety_flags` | Safety flags always prepended; opts are additive, not replacing |
+| `test_custom_opts_parsed_with_shlex` | Custom opts parsed correctly; `--non-interactive` and `--no-tools` still present |
 | `test_send_success` | Exit code 0 returns stdout as a string |
 | `test_send_error_rc1` | Exit code 1 returns a user-facing error message |
 | `test_send_error_rc42_invalid_input` | Exit code 42 returns "invalid input" message |
 | `test_send_error_rc53_turn_limit` | Exit code 53 returns "turn limit exceeded" message |
-| `test_send_timeout` | `asyncio.TimeoutError` returns timeout message; subprocess killed |
+| `test_send_timeout` | `asyncio.TimeoutError` returns timeout message; subprocess killed + waited |
 | `test_stream_yields_lines` | `stream()` yields stdout lines progressively |
 | `test_stream_error_appended` | Non-zero exit code appended to stream output |
 | `test_clear_history_does_not_raise` | `clear_history()` is a no-op that does not raise |
@@ -748,10 +877,15 @@ Potential stretch goal: streaming progressiveness verification (Open Questions i
 - [ ] `docs/features/gemini-cli-backend.md` status changed to `Implemented` on merge to `main`.
 - [ ] `VERSION` file bumped to `0.8.0` on `develop` before merge to `main`.
 - [ ] `AI_CLI=gemini` end-to-end: a message reaches the Gemini CLI subprocess and the response is returned to the user in both Telegram and Slack.
-- [ ] `--non-interactive` is always included in the subprocess command (cannot be accidentally omitted).
+- [ ] `--non-interactive` and `--no-tools` are always included in the subprocess command (cannot be accidentally omitted by `AI_CLI_OPTS`).
 - [ ] `GEMINI_API_KEY` missing triggers a clear error at startup (not a silent hang).
 - [ ] All non-zero exit codes (1, 42, 53) return user-facing error messages (not empty strings or tracebacks).
-- [ ] Subprocess is killed on timeout (no zombie `gemini` processes).
+- [ ] Subprocess is killed *and waited* on timeout (no zombie `gemini` processes).
+- [ ] `GEMINI_API_KEY` is in `AIConfig.secret_values()` — verified by checking `SecretRedactor` scrubs it from output.
+- [ ] `GEMINI_API_KEY` and `GOOGLE_API_KEY` are in `_SECRET_ENV_KEYS` — verified by checking `scrubbed_env()` strips them.
+- [ ] Google API key regex (`AIza[0-9A-Za-z_-]{35}`) is in `_SECRET_PATTERNS` in `redact.py`.
+- [ ] `GeminiBackend._make_cmd()` uses `scrubbed_env()` (not `os.environ`) — verified by the `test_env_does_not_contain_other_secrets` test.
+- [ ] `@backend_registry.register("gemini")` decorator present on `GeminiBackend`; `src.ai.gemini` listed in `_load_backends()`.
 - [ ] Existing backends (`copilot`, `codex`, `api`) are unaffected — no regression.
 - [ ] Contract test (`test_backends_contract.py`) passes with `GeminiBackend` included.
 - [ ] Edge cases in the Open Questions section above are resolved and either handled or documented.
