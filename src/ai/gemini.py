@@ -1,6 +1,6 @@
 """
 Gemini CLI backend — non-interactive subprocess mode.
-Each query spawns `gemini --non-interactive -p <prompt>` as a subprocess.
+Each query spawns `gemini -p <prompt> --yolo -o text` as a subprocess.
 History is injected by the bot layer via build_prompt() (stateless pattern).
 """
 import asyncio
@@ -16,11 +16,6 @@ logger = logging.getLogger(__name__)
 
 TIMEOUT = 180  # seconds — hard cap to prevent process hangs
 
-# Flags that would override mandatory safety flags via CLI last-wins semantics.
-# --approval-mode yolo/auto_edit would allow Gemini's built-in tools to execute
-# shell commands, file writes, and web searches — bypassing AgentGate's security layer.
-_SAFETY_NEGATIONS: frozenset[str] = frozenset({"--yolo", "-y"})
-
 
 @backend_registry.register("gemini")
 class GeminiBackend(SubprocessMixin, AICLIBackend):
@@ -35,19 +30,15 @@ class GeminiBackend(SubprocessMixin, AICLIBackend):
 
     def _make_cmd(self, prompt: str) -> tuple[list[str], dict]:
         env = {**scrubbed_env(), "GEMINI_API_KEY": self._api_key}
-        # --approval-mode plan: read-only mode — Gemini proposes tool actions but never
-        # executes them. This prevents Gemini's built-in shell exec, file writes, and web
-        # search from bypassing AgentGate's SHELL_ALLOWLIST, is_destructive() checks,
-        # confirmation dialogs, and audit logging.
+        # --yolo: auto-approve all Gemini tool calls (file reads, file writes, and shell
+        # commands). Docker container isolation is the containment boundary — Gemini can
+        # only affect what is mounted into the container. File changes are git-tracked.
+        # -o text: force plain-text stdout so no ANSI codes or JSON UI decorations
+        # bleed into the model response captured by send() / stream().
         # Non-interactive mode is handled by -p/--prompt (already in the command).
-        safety_flags = ["--approval-mode", "plan"]
+        safety_flags = ["--yolo", "-o", "text"]
         user_opts = shlex.split(self._opts) if self._opts else []
-        # Strip flags that would override safety flags (e.g. --yolo auto-approves all tools).
-        user_opts = [
-            o for o in user_opts
-            if not any(o == neg or o.startswith(f"{neg}=") for neg in _SAFETY_NEGATIONS)
-        ]
-        # Strip any --approval-mode from user opts so our safety flag always wins.
+        # Strip any --approval-mode from user opts (conflicts with --yolo).
         filtered_opts: list[str] = []
         skip_next = False
         for o in user_opts:

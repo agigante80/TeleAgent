@@ -17,6 +17,9 @@ ruff check src/
 # Lint docs (checks roadmap/feature-spec sync)
 python scripts/lint_docs.py
 
+# Validate a single feature doc
+python scripts/validate_feature_doc.py docs/features/<feature>.md
+
 # Run all tests
 pytest tests/ -v --tb=short
 
@@ -48,9 +51,9 @@ AgentGate is an async Python bot (Telegram **or** Slack) that acts as a gateway 
 - `adapter.py` defines the `AICLIBackend` ABC: `send()`, `stream()` (yields chunks; default yields `send()` at once), `clear_history()`, `close()` (release PTY/process resources), and the `is_stateful` class-level flag. Also defines `SubprocessMixin` for backends that spawn child processes in `REPO_DIR`.
 - `factory.py` selects the concrete backend based on the `AI_CLI` env var (`copilot` | `codex` | `api`).
 - `copilot.py` + `session.py` — **stateless** `CopilotBackend` (`is_stateful = False`). `CopilotSession` spawns `copilot -p <prompt> --allow-all` as a subprocess; the bot provides history via context injection. `COPILOT_SKILLS_DIRS` passes extra skills directories to the CLI.
-- `codex.py` — **stateful** `CodexBackend` (`is_stateful = True`). Manages its own conversation state via the Codex CLI subprocess.
+- `codex.py` — **stateless per-invocation** `CodexBackend` (`is_stateful = False`). Spawns `codex <prompt> --approval-mode full-auto --model <model>` as a subprocess. Each AgentGate message is a fresh Codex process; conversation history is injected by `build_prompt()`. Codex handles multi-step agentic execution within the single call (file edits, shell commands, tool use). Default model: `gpt-5.3-codex`.
 - `direct.py` — **stateful** `DirectAPIBackend` (`is_stateful = True`) for OpenAI / Anthropic / Ollama. Maintains a `self._messages` list natively. Reads `SYSTEM_PROMPT` (inline text) or `SYSTEM_PROMPT_FILE` (path to a markdown file) to prepend a system message.
-- `gemini.py` — **stateless** `GeminiBackend` (`is_stateful = False`). Spawns `gemini --non-interactive --no-tools -p <prompt>` as a subprocess. Requires `GEMINI_API_KEY`. Safety flags `--non-interactive` and `--no-tools` are always prepended and cannot be overridden via `AI_CLI_OPTS`.
+- `gemini.py` — **stateless** `GeminiBackend` (`is_stateful = False`). Spawns `gemini -p <prompt> --yolo -o text` as a subprocess. Requires `GEMINI_API_KEY`. `--yolo` auto-approves all tool calls (file ops + shell execution); Docker container isolation is the containment boundary. `-o text` prevents ANSI/JSON decorations in captured output. `--approval-mode` is stripped from `AI_CLI_OPTS` to prevent conflicting with `--yolo`.
 
 **Stateful vs stateless backends** (`src/bot.py → forward_to_ai`): if `backend.is_stateful` is `True`, the raw prompt is sent directly. If `False`, the last `HISTORY_TURNS` (default `10`) history exchanges from SQLite are prepended via `history.build_context()` before sending. Set `HISTORY_TURNS=0` to disable injection only (history is still stored).
 
@@ -80,7 +83,7 @@ AgentGate is an async Python bot (Telegram **or** Slack) that acts as a gateway 
 
 **Skills / agent personas** (`skills/`): markdown files that define specialized agent roles (`dev-agent.md`, `docs-agent.md`, `sec-agent.md`). Loaded via `SYSTEM_PROMPT_FILE` or `COPILOT_SKILLS_DIRS`. `SYSTEM_PROMPT_FILE` must **not** point inside `REPO_DIR` (enforced at startup in `factory.py`) — mount it via a separate Docker volume. `TRUSTED_AGENT_BOT_IDS` lists Slack bot IDs (or `Name:prefix` pairs) that bypass the normal user filter for agent-to-agent messaging.
 
-**Docs** (`docs/`): `docs/features/` — feature specs using a standard template (Overview / Env Vars / Design / Files to Change / Open Questions). `docs/guides/` — practical how-to guides. `docs/roadmap.md` — prioritized backlog linking to feature specs.
+**Docs** (`docs/`): `docs/features/` — feature specs using the standard template at `docs/features/_template.md`. Required sections (enforced by `scripts/validate_feature_doc.py`): `## Problem Statement`, `## Implementation Steps`, `## Test Plan`, `## Acceptance Criteria`. Each spec also has a Team Review table (reviewers: GateCode, GateSec, GateDocs); approval requires all scores ≥ 9/10. `docs/guides/` — practical how-to guides. `docs/roadmap.md` — prioritized backlog linking to feature specs. `lint_docs.py` enforces: every spec has a `> Status:` line; `Implemented` specs are removed from roadmap; all roadmap links resolve; every env var in `src/config.py` is documented in `README.md`.
 
 ## Key Conventions
 

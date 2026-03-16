@@ -13,9 +13,17 @@ logger = logging.getLogger(__name__)
 
 @backend_registry.register("codex", force=True)
 class CodexBackend(SubprocessMixin, AICLIBackend):
-    """Stateful backend that delegates to the Codex CLI subprocess."""
+    """Stateless-per-invocation backend using OpenAI's Codex CLI.
 
-    def __init__(self, api_key: str, model: str = "o3", opts: str = "") -> None:
+    Each AgentGate message spawns a fresh `codex <prompt> --approval-mode full-auto`
+    subprocess. Codex handles multi-step agentic execution within that single call
+    (file edits, tool use, etc.), but does NOT retain state across calls. AgentGate
+    injects conversation history via build_prompt() (is_stateful = False pattern).
+    """
+
+    is_stateful = False
+
+    def __init__(self, api_key: str, model: str = "gpt-5.3-codex", opts: str = "") -> None:
         self._api_key = api_key
         self._model = model
         self._opts = opts

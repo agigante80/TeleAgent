@@ -53,7 +53,7 @@ class TestConstruction:
 
     def test_default_model(self):
         backend = CodexBackend(api_key="sk-test")
-        assert backend._model == "o3"
+        assert backend._model == "gpt-5.3-codex"
 
     def test_not_stateful(self):
         assert CodexBackend(api_key="k").is_stateful is False
