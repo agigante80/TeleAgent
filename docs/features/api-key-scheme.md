@@ -15,7 +15,7 @@ key re-use is eliminated.
 
 | Reviewer | Round | Score | Date | Notes |
 |----------|-------|-------|------|-------|
-| GateCode | 1 | -/10 | - | Pending |
+| GateCode | 1 | 9/10 | 2026-03-16 | Fixed Step 3 call-sites (src/main.py → src/bot.py); added src/bot.py and src/platform/slack.py to Files table; clarified test_bot.py line 204/271 ai_api_key removals |
 | GateSec  | 1 | -/10 | - | Pending |
 | GateDocs | 1 | 9/10 | 2026-03-16 | Added logger.warning to deprecation code; fixed Roadmap Update section (duplicate→✅ edit); added .github/copilot-instructions.md to Files table and AC; clarified Whisper migration "When" and README upgrading section |
 
@@ -307,7 +307,7 @@ def create_transcriber(config: "VoiceConfig") -> Transcriber:
         raise ValueError("WHISPER_API_KEY must be set when WHISPER_PROVIDER=openai")
 ```
 
-Update the two call-sites in `src/main.py` and `src/platform/slack.py` to remove the `fallback_api_key` argument.
+Update the two call-sites — `src/bot.py` (Telegram) and `src/platform/slack.py` (Slack) — to remove the `fallback_api_key` argument. (`src/main.py` does not call `create_transcriber()` directly; both bots call it independently in their startup paths.)
 
 ---
 
@@ -332,9 +332,9 @@ _SECRET_ENV_KEYS: frozenset[str] = frozenset({
 
 ---
 
-### Step 5 — `src/main.py`: update `_validate_config()` and `create_transcriber()` call
+### Step 5 — `src/main.py`: update `_validate_config()`
 
-Add explicit provider/key validation:
+Add explicit provider/key validation (validation only — `src/main.py` does not call `create_transcriber()` directly):
 
 ```python
 def _validate_config(settings: Settings) -> None:
@@ -352,7 +352,7 @@ def _validate_config(settings: Settings) -> None:
         raise ValueError("WHISPER_API_KEY must be set when WHISPER_PROVIDER=openai")
 ```
 
-Remove `fallback_api_key` from `create_transcriber()` call.
+> `create_transcriber()` is called in `src/bot.py` (Telegram) and `src/platform/slack.py` (Slack) — see Step 3.
 
 ---
 
@@ -373,7 +373,9 @@ Remove `fallback_api_key` from `create_transcriber()` call.
 | `src/ai/factory.py` | **Edit** | Route each backend to its explicit key; raise `ValueError` if missing |
 | `src/transcriber.py` | **Edit** | Remove `fallback_api_key` parameter; raise `ValueError` if `whisper_api_key` empty |
 | `src/executor.py` | **Edit** | Remove `AI_API_KEY`, `CODEX_API_KEY` from `_SECRET_ENV_KEYS`; add `ANTHROPIC_API_KEY` |
-| `src/main.py` | **Edit** | Extend `_validate_config()` with provider/key checks; update `create_transcriber()` call |
+| `src/main.py` | **Edit** | Extend `_validate_config()` with provider/key checks (no `create_transcriber` call here) |
+| `src/bot.py` | **Edit** | Remove `fallback_api_key=settings.ai.ai_api_key` from `create_transcriber()` call (line 262) |
+| `src/platform/slack.py` | **Edit** | Remove `fallback_api_key=settings.ai.ai_api_key` from `create_transcriber()` call (line 119) |
 | `tests/unit/test_bot.py` | **Edit** | Remove `ai_api_key` / `codex_api_key` from `_make_settings()` helpers |
 | `tests/unit/test_config.py` | **Create/Edit** | Tests for deprecation warnings; `_validate_config()` error cases |
 | `tests/integration/test_factory.py` | **Edit** | Pass new key names in fixtures |
@@ -417,6 +419,8 @@ Remove `fallback_api_key` from `create_transcriber()` call.
 | Test | What it checks |
 |------|----------------|
 | `test_make_settings_no_ai_api_key` | `_make_settings()` helper does not set `ai_api_key` |
+
+> Also remove the two existing `settings.ai.ai_api_key = "sk-test"` assignments (lines 204 and 271) and replace with the appropriate per-backend key (`settings.ai.direct.openai_api_key` etc.) depending on what each test exercises.
 
 ### `tests/integration/test_factory.py`
 
