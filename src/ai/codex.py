@@ -15,10 +15,11 @@ logger = logging.getLogger(__name__)
 class CodexBackend(SubprocessMixin, AICLIBackend):
     """Stateless-per-invocation backend using OpenAI's Codex CLI.
 
-    Each AgentGate message spawns a fresh `codex <prompt> --approval-mode full-auto`
-    subprocess. Codex handles multi-step agentic execution within that single call
-    (file edits, tool use, etc.), but does NOT retain state across calls. AgentGate
-    injects conversation history via build_prompt() (is_stateful = False pattern).
+    Each AgentGate message spawns a fresh `codex exec --full-auto --color never
+    --ephemeral --model <model> <prompt>` subprocess. Codex handles multi-step
+    agentic execution within that single call (file edits, tool use, shell commands),
+    but does NOT retain state across calls. AgentGate injects conversation history
+    via build_prompt() (is_stateful = False pattern).
     """
 
     is_stateful = False
@@ -30,9 +31,13 @@ class CodexBackend(SubprocessMixin, AICLIBackend):
 
     def _make_cmd(self, prompt: str) -> tuple[list[str], dict]:
         env = {**scrubbed_env(), "OPENAI_API_KEY": self._api_key}
-        # Empty opts → full-auto default; non-empty → verbatim (replaces defaults)
-        extra = shlex.split(self._opts) if self._opts else ["--approval-mode", "full-auto"]
-        cmd = ["codex", prompt] + extra + ["--model", self._model]
+        # --full-auto: low-friction sandboxed execution (-a on-request, --sandbox workspace-write)
+        # Replaced by AI_CLI_OPTS when set — allows per-deployment approval policy override.
+        approval_flags = shlex.split(self._opts) if self._opts else ["--full-auto"]
+        # Always-on flags: --color never prevents ANSI codes in captured stdout;
+        # --ephemeral avoids accumulating session files in /data across messages.
+        fixed_flags = ["--color", "never", "--ephemeral"]
+        cmd = ["codex", "exec"] + approval_flags + fixed_flags + ["--model", self._model, prompt]
         return cmd, env
 
     async def _create_subprocess(self, prompt: str) -> asyncio.subprocess.Process:
