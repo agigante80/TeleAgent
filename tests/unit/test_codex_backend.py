@@ -114,10 +114,11 @@ class TestMakeCmd:
         _, env = backend._make_cmd("prompt")
         assert env["OPENAI_API_KEY"] == "sk-test"
 
-    def test_default_opts_uses_full_auto(self):
+    def test_default_opts_bypasses_sandbox(self):
         backend = CodexBackend(api_key="sk-x")
         cmd, _ = backend._make_cmd("prompt")
-        assert "--full-auto" in cmd
+        assert "--dangerously-bypass-approvals-and-sandbox" in cmd
+        assert "--full-auto" not in cmd
         assert "--approval-mode" not in cmd
 
     def test_always_on_flags_present(self):

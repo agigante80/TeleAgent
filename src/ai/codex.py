@@ -53,9 +53,11 @@ class CodexBackend(SubprocessMixin, AICLIBackend):
 
     def _make_cmd(self, prompt: str) -> tuple[list[str], dict]:
         env = {**scrubbed_env(), "OPENAI_API_KEY": self._api_key}
-        # --full-auto: low-friction sandboxed execution (-a on-request, --sandbox workspace-write)
-        # Replaced by AI_CLI_OPTS when set — allows per-deployment approval policy override.
-        approval_flags = shlex.split(self._opts) if self._opts else ["--full-auto"]
+        # --dangerously-bypass-approvals-and-sandbox: removes the workspace-write network sandbox
+        # so model shell commands (git fetch, curl, etc.) have full outbound access.
+        # Docker is the external isolation boundary; intended for exactly this use case.
+        # Replaced by AI_CLI_OPTS when set — allows per-deployment policy override.
+        approval_flags = shlex.split(self._opts) if self._opts else ["--dangerously-bypass-approvals-and-sandbox"]
         # Always-on flags: --color never prevents ANSI codes in captured stdout;
         # --ephemeral avoids accumulating session files in /data across messages.
         fixed_flags = ["--color", "never", "--ephemeral"]
