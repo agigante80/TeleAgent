@@ -331,6 +331,12 @@ does not replace the `[DELEGATE]` handoff or the Team Review table.
 ## Notes
 
 - All commits happen on `develop`. Never commit directly to `main`.
+- The reviewing agent is responsible for making the doc _better_, not just scoring it.
+  A 6/10 score with a list of gaps is only useful if those gaps are also fixed or
+  detailed enough that the next round can fix them.
+- If the feature doc does not yet have a Team Review table, the first reviewer adds it.
+- The process applies to any file under `docs/features/` (except `_template.md`) and
+  to guide files under `docs/guides/` when explicitly requested.
 
 ---
 
@@ -341,13 +347,9 @@ does not replace the `[DELEGATE]` handoff or the Team Review table.
 | GateCode | 1     | 9/10  | 2026-03-14 | Fixed template table placeholders, clarified wrap-around order |
 | GateSec  | 1     | 9/10  | 2026-03-14 | Added security scoring floor, SecretRedactor coverage rule, threat model requirement |
 | GateDocs | 1     | 9/10  | 2026-03-16 | Added trigger→chain pointer in "How to Trigger"; guide is authoritative and complete |
+| GateCode | 2     | 9/10  | 2026-03-16 | Moved orphaned Notes bullets into Notes section; expanded scope to include docs/guides/ |
+| GateSec  | 2     | -/10  | -          | Pending |
+| GateDocs | 2     | -/10  | -          | Pending |
 
-**Status**: ✅ Approved — round 1, all scores ≥ 9
-**Approved**: Yes — ready to use
-
----
-- The reviewing agent is responsible for making the doc _better_, not just scoring it.
-  A 6/10 score with a list of gaps is only useful if those gaps are also fixed or
-  detailed enough that the next round can fix them.
-- If the feature doc does not yet have a Team Review table, the first reviewer adds it.
-- The process applies to any file under `docs/features/` except `_template.md`.
+**Status**: 🔄 Round 2 in progress
+**Approved**: Yes (round 1) — round 2 review underway
