@@ -34,7 +34,7 @@ GateSec's 8/10 indicates unresolved security concerns after the inline fixes. Th
 
 | Reviewer | Round | Score | Date | Notes |
 |----------|-------|-------|------|-------|
-| GateCode | 2 | -/10 | - | Pending |
+| GateCode | 2 | 9/10 | 2026-03-16 | Split Step 1 into PR1/PR2 sub-steps; labelled all Steps PR1 or PR2; fixed executor.py Files table (missing GEMINI_API_KEY, GOOGLE_API_KEY, COPILOT_GITHUB_TOKEN); added Step 7 for .github/copilot-instructions.md; resolved Open Question 2 (deferred, roadmap item 2.18 added); sharpened test_secret_env_keys_correct_names to assert absence of wrong names |
 | GateSec  | 2 | -/10 | - | Pending |
 | GateDocs | 2 | -/10 | - | Pending |
 
@@ -265,7 +265,40 @@ Emit these in `Settings.load()` *after* all sub-configs are constructed so the c
 
 ## Implementation Steps
 
-### Step 1 — `src/config.py`: add `openai_api_key` and `anthropic_api_key`; remove `ai_api_key` and `codex_api_key`
+> **⚠️ Two-PR delivery required** (see AC and Architecture Notes).
+>
+> - **PR 1 (v1.0.0)** — add deprecation warnings; all existing fields and fallback logic remain intact. Users see the warning but experience no breakage.
+> - **PR 2 (v1.1.0)** — remove deprecated fields and fallback logic; add new explicit fields. Hard break for un-migrated deployments.
+>
+> Steps below are labelled `[PR1]` or `[PR2]` where the split matters. A step labelled `[PR2]` must not appear in the PR1 merge.
+
+### Step 1 — `src/config.py`
+
+**Step 1a \[PR1\]** — add deprecation warnings in `Settings.load()` only; all existing fields (`ai_api_key`, `codex_api_key`) remain:
+
+```python
+# In Settings.load() — add immediately after all sub-configs are constructed:
+import logging, warnings, os as _os
+
+_log = logging.getLogger(__name__)
+if _os.environ.get("AI_API_KEY"):
+    _msg = (
+        "AI_API_KEY is deprecated and will be removed in v1.1.0. "
+        "Set OPENAI_API_KEY, ANTHROPIC_API_KEY, or the backend-specific key instead. "
+        "See docs/features/api-key-scheme.md for the migration guide."
+    )
+    _log.warning(_msg)
+    warnings.warn(_msg, DeprecationWarning, stacklevel=2)
+if _os.environ.get("CODEX_API_KEY"):
+    _msg = (
+        "CODEX_API_KEY is deprecated and will be removed in v1.1.0. "
+        "Use OPENAI_API_KEY instead."
+    )
+    _log.warning(_msg)
+    warnings.warn(_msg, DeprecationWarning, stacklevel=2)
+```
+
+**Step 1b \[PR2\]** — add new explicit fields; remove `ai_api_key` and `codex_api_key`; update `secret_values()` delegation:
 
 ```python
 # In DirectAIConfig — add:
@@ -287,13 +320,11 @@ def secret_values(self) -> list[str]:
 
 # In VoiceConfig — remove fallback reference (field itself stays):
 whisper_api_key: str = ""  # WHISPER_API_KEY — required when WHISPER_PROVIDER=openai; no fallback
-
-# In Settings.load() — add deprecation warnings (see Recommended Solution above)
 ```
 
 ---
 
-### Step 2 — `src/ai/factory.py`: route backends to their explicit keys
+### Step 2 — `src/ai/factory.py`: route backends to their explicit keys \[PR2\]
 
 ```python
 # codex:
@@ -316,7 +347,7 @@ elif ai.direct.ai_provider == "ollama":
 
 ---
 
-### Step 3 — `src/transcriber.py`: remove `fallback_api_key` parameter
+### Step 3 — `src/transcriber.py`: remove `fallback_api_key` parameter \[PR2\]
 
 ```python
 # Before:
@@ -334,7 +365,7 @@ Update the two call-sites — `src/bot.py` (Telegram) and `src/platform/slack.py
 
 ---
 
-### Step 4 — `src/executor.py`: update `_SECRET_ENV_KEYS`
+### Step 4 — `src/executor.py`: update `_SECRET_ENV_KEYS` \[PR2\]
 
 ```python
 # Remove: "AI_API_KEY", "CODEX_API_KEY"
@@ -357,7 +388,7 @@ _SECRET_ENV_KEYS: frozenset[str] = frozenset({
 
 ---
 
-### Step 5 — `src/main.py`: update `_validate_config()`
+### Step 5 — `src/main.py`: update `_validate_config()` \[PR2\]
 
 Add explicit provider/key validation (validation only — `src/main.py` does not call `create_transcriber()` directly):
 
@@ -381,12 +412,21 @@ def _validate_config(settings: Settings) -> None:
 
 ---
 
-### Step 6 — Tests: update mocks and assertions
+### Step 6 — Tests: update mocks and assertions \[PR2\]
 
 - `tests/unit/test_bot.py` — remove references to `ai_api_key` and `codex_api_key` from `_make_settings()`.
 - `tests/unit/test_config.py` (or create) — add tests for deprecation warnings and new `_validate_config()` checks.
 - `tests/integration/test_factory.py` — update to pass `openai_api_key` / `anthropic_api_key`.
 - `conftest.py` — update the autouse credential-scrub fixture to remove `AI_API_KEY` / `CODEX_API_KEY`; add `ANTHROPIC_API_KEY`.
+
+---
+
+### Step 7 — `.github/copilot-instructions.md` \[PR2\]
+
+Update the key-naming notes in the instructions file to:
+- Document the new per-backend scheme (`OPENAI_API_KEY` for codex/api+openai, `ANTHROPIC_API_KEY` for api+anthropic, `GEMINI_API_KEY` for gemini, `WHISPER_API_KEY` for voice — no fallbacks).
+- Note that `AI_API_KEY` and `CODEX_API_KEY` are removed as of v1.1.0.
+- Confirm the `secret_values()` convention still applies; remind that `AIConfig.secret_values()` must delegate to nested sub-configs.
 
 ---
 
@@ -397,7 +437,7 @@ def _validate_config(settings: Settings) -> None:
 | `src/config.py` | **Edit** | Remove `ai_api_key` (AIConfig), `codex_api_key` (CodexAIConfig); add `openai_api_key` to CodexAIConfig, `openai_api_key` + `anthropic_api_key` to DirectAIConfig; add deprecation warnings in `Settings.load()` |
 | `src/ai/factory.py` | **Edit** | Route each backend to its explicit key; raise `ValueError` if missing |
 | `src/transcriber.py` | **Edit** | Remove `fallback_api_key` parameter; raise `ValueError` if `whisper_api_key` empty |
-| `src/executor.py` | **Edit** | Remove `AI_API_KEY`, `CODEX_API_KEY` from `_SECRET_ENV_KEYS`; add `ANTHROPIC_API_KEY` |
+| `src/executor.py` | **Edit** | Remove `AI_API_KEY`, `CODEX_API_KEY` from `_SECRET_ENV_KEYS`; add `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `GOOGLE_API_KEY`, `COPILOT_GITHUB_TOKEN` |
 | `src/main.py` | **Edit** | Extend `_validate_config()` with provider/key checks (no `create_transcriber` call here) |
 | `src/bot.py` | **Edit** | Remove `fallback_api_key=settings.ai.ai_api_key` from `create_transcriber()` call (line 262) |
 | `src/platform/slack.py` | **Edit** | Remove `fallback_api_key=settings.ai.ai_api_key` from `create_transcriber()` call (line 119) |
@@ -439,7 +479,7 @@ def _validate_config(settings: Settings) -> None:
 | `test_secret_values_no_ai_api_key` | `AIConfig.secret_values()` no longer returns `AI_API_KEY` |
 | `test_ai_config_delegates_to_nested_secrets` | `AIConfig.secret_values()` includes values from `DirectAIConfig.secret_values()` and `CodexAIConfig.secret_values()` — ensures `SecretRedactor._collect_secrets()` discovers per-backend keys |
 | `test_direct_config_secret_values` | `DirectAIConfig.secret_values()` returns `openai_api_key` and `anthropic_api_key` |
-| `test_secret_env_keys_correct_names` | `_SECRET_ENV_KEYS` contains `TG_BOT_TOKEN` and `GITHUB_REPO_TOKEN` (not renamed variants) and contains `ANTHROPIC_API_KEY` |
+| `test_secret_env_keys_correct_names` | `_SECRET_ENV_KEYS` contains `TG_BOT_TOKEN` and `GITHUB_REPO_TOKEN`; explicitly asserts `TELEGRAM_BOT_TOKEN` and `GITHUB_TOKEN` are NOT present (absence of wrong names); also asserts `ANTHROPIC_API_KEY` is present |
 
 ### `tests/unit/test_bot.py` additions
 
@@ -544,7 +584,7 @@ No other env vars change. Copilot and Gemini backends are unaffected.
 
 1. **Existing deployments with only `AI_API_KEY` set** — The deprecation warning in v1.0.0 must surface clearly in container logs. `logger.warning()` (not `warnings.warn()`) is more visible in Docker log streams — use both.
 
-2. **`AI_CLI=api` with no `AI_PROVIDER`** — Current default is `""`. Should we require `AI_PROVIDER` to be explicitly set? Proposed: yes — add validation that `AI_PROVIDER` is non-empty when `AI_CLI=api`. This is a separate but related cleanup. _GateDocs note: if this is in scope for this feature, add an AC item and a row to the Files to Change table for `_validate_config()`; if deferred, add a roadmap item (suggested: 2.18) so it is not lost._
+2. **`AI_CLI=api` with no `AI_PROVIDER`** — Current default is `""`. Should we require `AI_PROVIDER` to be explicitly set? Proposed: yes — add validation that `AI_PROVIDER` is non-empty when `AI_CLI=api`. This is a separate but related cleanup. _GateDocs note: if this is in scope for this feature, add an AC item and a row to the Files to Change table for `_validate_config()`; if deferred, add a roadmap item (suggested: 2.18) so it is not lost._ **Decision (round 2): deferred — out of scope for this feature. Tracked as roadmap item 2.18 (`AI_PROVIDER` explicit-required validation). No AC item added here.**
 
 3. **`openai-compat` provider** — Uses `OPENAI_API_KEY` but with a custom `AI_BASE_URL`. The key may be a non-OpenAI key (e.g. Azure). Is `OPENAI_API_KEY` the right name? Alternative: `COMPAT_API_KEY`. Decision deferred — `OPENAI_API_KEY` is widely understood and most compat endpoints accept it.
 
