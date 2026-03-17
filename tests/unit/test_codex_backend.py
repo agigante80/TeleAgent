@@ -96,6 +96,15 @@ class TestLogin:
             CodexBackend(api_key="sk-x")
         assert any("failed" in r.message for r in caplog.records)
 
+    def test_login_no_op_when_codex_not_installed(self, mock_subprocess_run, caplog):
+        """_login() must not raise when the codex binary is absent (e.g. CI)."""
+        import logging
+        mock_subprocess_run.side_effect = FileNotFoundError("codex not found")
+        with caplog.at_level(logging.DEBUG, logger="src.ai.codex"):
+            backend = CodexBackend(api_key="sk-x")  # must not raise
+        assert backend is not None
+        assert any("not found" in r.message for r in caplog.records)
+
 
 # ── _make_cmd ─────────────────────────────────────────────────────────────────
 

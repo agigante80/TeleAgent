@@ -40,13 +40,18 @@ class CodexBackend(SubprocessMixin, AICLIBackend):
         documented usage: `printenv OPENAI_API_KEY | codex login --with-api-key`.
         Runs synchronously at startup; credentials persist across restarts in the
         Docker volume at /data/.codex/auth.json.
+        No-ops gracefully when the `codex` binary is not installed (e.g. in CI).
         """
-        result = subprocess.run(
-            ["codex", "login", "--with-api-key"],
-            input=self._api_key,
-            text=True,
-            capture_output=True,
-        )
+        try:
+            result = subprocess.run(
+                ["codex", "login", "--with-api-key"],
+                input=self._api_key,
+                text=True,
+                capture_output=True,
+            )
+        except FileNotFoundError:
+            logger.debug("codex binary not found — skipping login (not running in Docker?)")
+            return
         if result.returncode != 0:
             logger.warning("codex login failed: %s", result.stderr.strip())
         else:
