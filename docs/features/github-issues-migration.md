@@ -14,7 +14,7 @@ This feature outlines the plan to convert all existing feature documents in `doc
 | Reviewer | Round | Score | Date | Notes |
 |----------|-------|-------|------|-------|
 | GateCode | 1 | 8/10 | 2026-03-17 | Good direction; narrowed to phased migration and repo-accurate config/tooling details. |
-| GateSec  | 1 | -/10 | - | Pending |
+| GateSec  | 1 | 8/10 | 2026-03-17 | Phase 1 surface clean; added threat model, fixed align-sync scoping, tightened Phase 2 security reqs. |
 | GateDocs | 1 | -/10 | - | Pending |
 
 **Status**: ⏳ Pending review
@@ -40,7 +40,7 @@ This feature outlines the plan to convert all existing feature documents in `doc
 1.  **Manual Synchronization**: The current `docs/features/` and `docs/roadmap.md` system requires manual updates, leading to inconsistencies and stale information.
 2.  **Lack of Integrated Prioritization**: Features are not prioritized within a dynamic system, making it difficult to re-prioritize and track progress effectively.
 3.  **Inefficient Review Process**: The current feature review process is document-centric, requiring manual delegation and status updates, which is not scalable or easily auditable.
-4.  **Limited Automation**: The existing `docs roadmap-sync` and `docs align-sync` commands only address a small part of the documentation lifecycle and are not integrated with project management tools.
+4.  **Limited Automation**: The existing `docs roadmap-sync` command only addresses feature-status bookkeeping and is not integrated with project management tools. (`docs align-sync` handles README/config/env synchronization and is out of scope for this migration.)
 5.  **Disparate Systems**: Feature planning, tracking, and development are spread across different systems (documentation, code, chat), leading to overhead and potential miscommunication.
 
 ---
@@ -52,7 +52,7 @@ This feature outlines the plan to convert all existing feature documents in `doc
 | Docs | `docs/features/*.md` | Individual feature specifications, manually updated. |
 | Docs | `docs/roadmap.md` | Centralized list of features and their status, manually updated. |
 | Commands | `docs roadmap-sync` | Synchronizes `docs/features/` and `docs/roadmap.md`, intended to keep them aligned but requires manual trigger and doesn't fully automate. |
-| Commands | `docs align-sync` | Synchronizes `README.md`, `.env.example`, `docker-compose.yml.example`, and `src/config.py`, also requires manual trigger. |
+| Commands | `docs align-sync` | Synchronizes `README.md`, `.env.example`, `docker-compose.yml.example`, and `src/config.py`. Out of scope — retained after migration. |
 | Guides | `docs/guides/feature-review-process.md` | Defines a manual, document-centric review process involving GateCode, GateSec, and GateDocs. |
 | Template | `docs/features/_template.md` | Template for new feature documents. |
 
@@ -142,11 +142,27 @@ Deliver this in two explicit phases to avoid a risky all-at-once cutover.
 
 ## Architecture Notes
 
--   **Agent GitHub Interaction**: For automation, prefer a single audited execution path (`gh` CLI with explicit allowlisted subcommands) over ad-hoc API wrappers spread across backends.
+-   **Agent GitHub Interaction**: For automation, prefer a single audited execution path (`gh` CLI with explicit allowlisted subcommands) over ad-hoc API wrappers spread across backends. All `gh` invocations must go through `run_shell()` so they are subject to `SHELL_ALLOWLIST`, audit logging, `SecretRedactor`, and destructive-command confirmation.
+-   **Argument Sanitization**: Issue titles and body content originate from feature docs (semi-trusted) or user input (untrusted). Before interpolating into `gh` arguments, sanitize with `shlex.quote()` or pass via `--body-file` (stdin/tempfile) to avoid shell metacharacter injection. Never construct `gh` command strings via f-string interpolation of user content.
 -   **Credential Reuse**: Use existing `Settings.github.github_repo_token`; avoid introducing `GITHUB_API_TOKEN` alongside it.
 -   **Template Consistency**: Migration output must preserve acceptance criteria, open questions, and security notes from source docs.
--   **Backward Compatibility**: During phase 1, legacy docs remain readable to avoid disrupting active planning.
+-   **Backward Compatibility**: During phase 1, legacy docs remain readable to avoid disrupting active planning. `docs align-sync` is retained (it handles README/config sync, not feature tracking).
 -   **Scalability**: Label taxonomy (`type:*`, `priority:*`, `review:*`) should support automation and board filtering.
+
+---
+
+## Security Considerations (Phase 2 Threat Model)
+
+Phase 1 has minimal security surface (manual copy-paste, no API interaction, no new secrets). The threats below apply to Phase 2 automated GitHub interaction and must be addressed in that follow-up feature doc before implementation.
+
+| Threat | Impact | Mitigation |
+|--------|--------|------------|
+| *Command injection via `gh` arguments* | Attacker-controlled issue title/body could inject shell metacharacters into `gh issue create` | Route all `gh` calls through `run_shell()`. Pass body content via `--body-file` (not inline args). Sanitize titles with `shlex.quote()`. |
+| *Token scope creep* | `GITHUB_REPO_TOKEN` with full `repo` scope allows code pushes, branch deletion, secret access | Require least-privilege scope: `issues:write` + `metadata:read` only. Document required scopes in `.env.example`. |
+| *Markdown injection in issue body* | Feature doc content copied into issue body could contain XSS payloads rendered by GitHub | Low risk — GitHub sanitizes rendered markdown. No additional mitigation needed. |
+| *Audit trail gap* | `gh` commands bypassing `run_shell()` would skip audit log and `SecretRedactor` | Enforce that all `gh` invocations go through `run_shell()` with `redactor` param. Never call `subprocess` directly. |
+| *Feature doc as prompt injection vector* | Migration script reads `docs/features/*.md` — a crafted doc could embed instructions | Script performs deterministic text extraction only, not LLM processing. Manual review of output before posting provides a human checkpoint. |
+| *Token leakage in error messages* | `gh` CLI may echo the token in verbose/debug error output | `GITHUB_REPO_TOKEN` is already in `_SECRET_ENV_KEYS` (scrubbed from env) and `secret_values()` (redacted from output). Ensure `gh` receives token via `--with-token` stdin, not env var, to avoid accidental logging. |
 
 ---
 
@@ -187,7 +203,8 @@ Revise `docs/guides/feature-review-process.md` to:
 ### Step 4 — Document Transition of Old Commands
 
 Update `README.md` and docs-agent instruction files (`.gemini/docs-agent.md`, `skills/docs-agent.md`) to:
--   Clarify which parts of `docs roadmap-sync` and `docs align-sync` stay during migration and which parts are superseded by issue tracking.
+-   Clarify that `docs roadmap-sync` is superseded by GitHub issue tracking and will be retired after migration.
+-   Clarify that `docs align-sync` is *not* affected by this migration (it handles README/config/env synchronization, which remains useful).
 -   Provide operator guidance for mixed-mode operation during transition.
 
 ### Step 5 — Plan for Automated GitHub Interaction (Future Feature)
@@ -255,7 +272,7 @@ Once all features are successfully migrated and verified on GitHub:
 
 ### `README.md`
 
--   Add a note about the deprecation of `docs roadmap-sync` and `docs align-sync` under a "Deprecated Commands" section or similar.
+-   Add a note that `docs roadmap-sync` is superseded by GitHub issue tracking during migration. `docs align-sync` is *not* deprecated — it continues to handle README/config/env synchronization.
 
 ### `.env.example` and `docker-compose.yml.example`
 
@@ -293,6 +310,7 @@ Delete `docs/roadmap.md` only in cleanup phase after parity is validated.
 1.  **Partial Migration Handling**: What is the strategy if only a subset of feature documents are migrated? How do we ensure consistency during a transitional period?
 2.  **Rollback Strategy**: What is the process for rolling back if the new GitHub-centric system proves problematic?
 3.  **Agent GitHub Authentication**: What least-privilege scope is required for `GITHUB_REPO_TOKEN`, and how is rotation/audit handled for automated interactions?
+    > *Proposed*: For Phase 2, require a fine-grained PAT with `issues:write` and `metadata:read` only. Full `repo` scope must NOT be used for issue automation. Document required scopes in `.env.example`. Token rotation: recommend 90-day expiry; `_validate_config()` can warn if the token lacks expected scopes (via `gh auth status`).
 4.  **Consistency Across AI CLIs**: How will the different AI CLIs (Codex, Gemini, Autopilot) ensure consistent interaction with GitHub issues, especially regarding automated actions and review processes?
 5.  **External User Interaction**: How will external users (e.g., community contributors) be guided through the new GitHub issue creation and review process?
 6.  **Migration Verification**: What are the definitive criteria for verifying that all features have been successfully migrated to GitHub issues before deleting the old documentation?
@@ -312,6 +330,7 @@ Delete `docs/roadmap.md` only in cleanup phase after parity is validated.
 -   [ ] The team has approved the new review process.
 -   [ ] A parity report confirms every migrated feature doc has a corresponding GitHub issue with mapped status/priority labels.
 -   [ ] Cleanup work (`docs/roadmap.md` and migrated legacy docs removal) is tracked in a follow-up PR/feature.
+-   [ ] Phase 2 (automated GitHub interaction) has its own feature doc with a security review before implementation. `docs align-sync` is confirmed retained and not deprecated by this migration.
 -   [ ] The `VERSION` file bump follows `docs/versioning.md` for the exact delivered scope.
 -   [ ] All agents are briefed and capable of following the new GitHub-issue-centric review process.
 -   [ ] `pytest tests/ -v --tb=short` passes with no failures or errors (after script implementation).
