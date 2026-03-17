@@ -930,7 +930,7 @@ class TestDeliverSlack:
         assert "blocks" in call_kwargs
 
     async def test_large_response_uploads_file(self):
-        """> 12000 chars → files_upload_v2 called."""
+        """> 20000 chars → files_upload_v2 called."""
         from src.platform.slack import _SLACK_SNIPPET_THRESHOLD
         bot = self._make_deliver_bot()
         client = _make_client()
@@ -938,6 +938,24 @@ class TestDeliverSlack:
         client.files_upload_v2 = AsyncMock()
         await bot._deliver_slack(client, "C1", "T100", text, None)
         client.files_upload_v2.assert_awaited_once()
+
+    async def test_file_upload_failure_falls_back_to_truncated(self):
+        """If files_upload_v2 raises (e.g. missing files:write scope), fall back to truncated multi-block."""
+        from src.platform.slack import _SLACK_SNIPPET_THRESHOLD
+        bot = self._make_deliver_bot()
+        client = _make_client()
+        text = "x" * (_SLACK_SNIPPET_THRESHOLD + 1)
+        client.files_upload_v2 = AsyncMock(side_effect=Exception("missing_scope"))
+        client.chat_postMessage = AsyncMock(return_value={"ok": True, "ts": "1.0"})
+        await bot._deliver_slack(client, "C1", "T100", text, None)
+        # Should NOT raise; fallback multi-block postMessage should be called
+        client.chat_postMessage.assert_awaited()
+        # The fallback note should mention upload failure
+        all_texts = " ".join(
+            str(call) for call in client.chat_postMessage.call_args_list
+            + client.chat_update.call_args_list
+        )
+        assert "failed" in all_texts.lower() or "upload" in all_texts.lower()
 
     async def test_empty_text_posts_placeholder(self):
         """Empty text → '_(empty response)_' message."""

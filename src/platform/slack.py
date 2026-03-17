@@ -66,7 +66,7 @@ _THINKING_BLOCKS = [
 # Slack section block text limit (API enforced)
 _SLACK_BLOCK_LIMIT = 3000
 # Responses longer than this are uploaded as a file snippet instead of multi-block
-_SLACK_SNIPPET_THRESHOLD = 12_000
+_SLACK_SNIPPET_THRESHOLD = 20_000
 
 # ── Agent-to-agent delegation sentinel ────────────────────────────────────────
 
@@ -413,8 +413,35 @@ class SlackBot:
             if thread_ts:
                 upload_kwargs["thread_ts"] = thread_ts
             await client.files_upload_v2(**upload_kwargs)
-        except Exception:
-            logger.warning("Slack file upload failed for long response")
+        except Exception as exc:
+            logger.exception("Slack file upload failed for long response: %s", exc)
+            # Fallback: edit the placeholder and post a truncated version via multi-block.
+            redacted = self._redactor.redact(text)
+            truncated = redacted[:_SLACK_SNIPPET_THRESHOLD]
+            fallback_note = (
+                f"⚠️ File upload failed (missing `files:write` scope?). "
+                f"Showing first {len(truncated):,} of {len(text):,} chars:"
+            )
+            if existing_ts is None:
+                await self._reply(client, channel, fallback_note, thread_ts)
+            else:
+                await self._edit(client, channel, existing_ts, fallback_note)
+            chunks = split_text(truncated, _SLACK_BLOCK_LIMIT)
+            blocks = [
+                {"type": "section", "text": {"type": "mrkdwn", "text": chunk}}
+                for chunk in chunks
+            ]
+            kwargs: dict = {
+                "channel": channel,
+                "text": truncated[:_SLACK_BLOCK_LIMIT],
+                "blocks": blocks,
+            }
+            if thread_ts:
+                kwargs["thread_ts"] = thread_ts
+            try:
+                await client.chat_postMessage(**kwargs)
+            except Exception:
+                logger.exception("Slack fallback multi-block post failed for long response")
 
     async def _post_delegations(
         self,
