@@ -170,10 +170,14 @@ def render_issue_markdown(doc: FeatureDoc) -> str:
     return "\n".join(lines)
 
 
-def export_features(features_dir: Path, output_dir: Path) -> dict[str, object]:
-    features = sorted(
+def _feature_sources(features_dir: Path) -> list[Path]:
+    return sorted(
         p for p in features_dir.glob("*.md") if p.is_file() and p.name != TEMPLATE_NAME
     )
+
+
+def export_features(features_dir: Path, output_dir: Path) -> dict[str, object]:
+    features = _feature_sources(features_dir)
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -210,15 +214,110 @@ def export_features(features_dir: Path, output_dir: Path) -> dict[str, object]:
     return report
 
 
+def verify_parity_report(features_dir: Path, output_dir: Path) -> list[str]:
+    report_path = output_dir / "parity-report.json"
+    if not report_path.exists():
+        return [f"missing parity report: {report_path.as_posix()}"]
+
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    items = report.get("items")
+    if not isinstance(items, list):
+        return ["invalid parity report: `items` must be a list"]
+
+    expected_sources = {path.resolve() for path in _feature_sources(features_dir)}
+    reported_sources: set[Path] = set()
+    errors: list[str] = []
+
+    if report.get("schema_version") != 2:
+        errors.append(
+            f"unexpected schema_version: expected 2, got {report.get('schema_version')!r}"
+        )
+    if report.get("source_count") != len(expected_sources):
+        errors.append(
+            "source_count mismatch: "
+            f"expected {len(expected_sources)}, got {report.get('source_count')!r}"
+        )
+    if report.get("export_count") != len(items):
+        errors.append(
+            f"export_count mismatch: expected {len(items)}, got {report.get('export_count')!r}"
+        )
+
+    for index, item in enumerate(items):
+        if not isinstance(item, dict):
+            errors.append(f"invalid item at index {index}: expected object")
+            continue
+
+        source_raw = item.get("source")
+        output_raw = item.get("output")
+        source_hash = item.get("source_sha256")
+        output_hash = item.get("output_sha256")
+        if not all(isinstance(value, str) for value in (source_raw, output_raw, source_hash, output_hash)):
+            errors.append(f"item {index}: missing required string fields")
+            continue
+
+        source = Path(source_raw)
+        output = Path(output_raw)
+        source_resolved = source.resolve()
+        reported_sources.add(source_resolved)
+
+        if not source.exists():
+            errors.append(f"item {index}: missing source file {source.as_posix()}")
+        else:
+            actual_source_hash = _sha256_text(source.read_text(encoding="utf-8"))
+            if actual_source_hash != source_hash:
+                errors.append(
+                    f"item {index}: source hash mismatch for {source.as_posix()}"
+                )
+
+        if not output.exists():
+            errors.append(f"item {index}: missing output file {output.as_posix()}")
+        else:
+            actual_output_hash = _sha256_text(output.read_text(encoding="utf-8"))
+            if actual_output_hash != output_hash:
+                errors.append(
+                    f"item {index}: output hash mismatch for {output.as_posix()}"
+                )
+
+        if source_resolved not in expected_sources:
+            errors.append(
+                f"item {index}: unexpected source not found under features dir: {source.as_posix()}"
+            )
+
+    missing_from_report = expected_sources - reported_sources
+    for missing_source in sorted(missing_from_report):
+        errors.append(f"missing parity item for source: {missing_source.as_posix()}")
+
+    return errors
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--features-dir", type=Path, default=Path("docs/features"))
     parser.add_argument("--output-dir", type=Path, default=Path("tmp/feature-issue-export"))
+    parser.add_argument(
+        "--verify",
+        action="store_true",
+        help="verify existing parity-report.json and exported markdown hashes",
+    )
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
+    if args.verify:
+        errors = verify_parity_report(args.features_dir, args.output_dir)
+        if errors:
+            print("Parity verification failed:")
+            for error in errors:
+                print(f"- {error}")
+            return 1
+        print(
+            "Parity verification passed for "
+            f"{args.features_dir.as_posix()} against "
+            f"{(args.output_dir / 'parity-report.json').as_posix()}"
+        )
+        return 0
+
     report = export_features(args.features_dir, args.output_dir)
     print(
         "Exported "

@@ -210,6 +210,59 @@ def test_parity_report_hashes_match_source_and_export(tmp_path):
     assert item["output_sha256"] == hashlib.sha256(output_text.encode("utf-8")).hexdigest()
 
 
+def test_verify_parity_report_passes_roundtrip(tmp_path):
+    module = _load_module()
+    features_dir = tmp_path / "docs" / "features"
+    output_dir = tmp_path / "tmp" / "feature-issue-export"
+    features_dir.mkdir(parents=True)
+
+    source = features_dir / "ok.md"
+    source.write_text(
+        "\n".join(
+            [
+                "# Verify OK",
+                "",
+                "> Status: **Planned** | Priority: Medium | Last reviewed: 2026-03-18",
+                "",
+                "Summary.",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    module.export_features(features_dir, output_dir)
+
+    assert module.verify_parity_report(features_dir, output_dir) == []
+
+
+def test_verify_parity_report_detects_tampered_export(tmp_path):
+    module = _load_module()
+    features_dir = tmp_path / "docs" / "features"
+    output_dir = tmp_path / "tmp" / "feature-issue-export"
+    features_dir.mkdir(parents=True)
+
+    source = features_dir / "tamper.md"
+    source.write_text(
+        "\n".join(
+            [
+                "# Verify Tamper",
+                "",
+                "> Status: **Planned** | Priority: Medium | Last reviewed: 2026-03-18",
+                "",
+                "Summary.",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    module.export_features(features_dir, output_dir)
+    (output_dir / "tamper.md").write_text("tampered", encoding="utf-8")
+
+    errors = module.verify_parity_report(features_dir, output_dir)
+
+    assert any("output hash mismatch" in error for error in errors)
+
+
 def test_label_values_are_sanitized():
     module = _load_module()
     doc = module.FeatureDoc(

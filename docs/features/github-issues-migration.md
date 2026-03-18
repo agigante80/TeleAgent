@@ -273,6 +273,8 @@ Once all features are successfully migrated and verified on GitHub:
 | `test_parse_feature_doc_edge_cases` | Handles missing status metadata and sparse section layouts, including docs with leading blank lines before `# Title`. |
 | `test_parse_adversarial_content_literal_passthrough` | Feature docs containing shell metacharacters (`$(...)`, `` `...` ``), HTML/script tags, or embedded instructions in code blocks are passed through as literal text — no interpretation or execution. |
 | `test_label_values_are_sanitized` | Punctuation-heavy `status`/`priority` values are normalized to safe label slugs (`[a-z0-9-]`) before export. |
+| `test_verify_parity_report_passes_roundtrip` | `verify_parity_report()` accepts a clean export/parity set with no errors. |
+| `test_verify_parity_report_detects_tampered_export` | `verify_parity_report()` flags hash drift if exported markdown is modified after parity generation. |
 
 ### Manual Verification of Migration
 
@@ -280,6 +282,7 @@ Once all features are successfully migrated and verified on GitHub:
 -   Manually create GitHub issues from the generated Markdown and verify their appearance on GitHub (labels, title, content).
 -   Confirm `tmp/feature-issue-export/parity-report.json` has 1:1 mapping for every `docs/features/*.md` source (excluding `_template.md`).
 -   Confirm each parity item includes `source_sha256` and `output_sha256`; use these hashes to ensure reviewed export artifacts are exactly the ones posted to GitHub.
+-   Run `python scripts/migrate_features.py --verify` before posting to GitHub; verification must pass with zero mismatches.
 -   Verify parity report content (not just existence): spot-check that titles, labels, and section headings match the source docs. The parity report is the trust anchor for the cleanup phase — a buggy report could lead to premature doc deletion.
 
 ### End-to-End Review Process Simulation
