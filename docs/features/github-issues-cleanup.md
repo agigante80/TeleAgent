@@ -10,7 +10,7 @@ Follow-up feature for retiring legacy docs-based tracking only after issue parit
 |----------|-------|-------|------|-------|
 | GateCode | 1 | 9/10 | 2026-03-18 | GateCode round 1: added explicit cleanup gates, deterministic deletion inputs, and rollback/runbook constraints. |
 | GateSec  | 1 | 9/10 | 2026-03-18 | GateSec round 1: added path-boundary enforcement, integrity chain, manifest validation, security considerations section, and expanded test/acceptance criteria. |
-| GateDocs | - | -/10 | - | Pending documentation review. |
+| GateDocs | 1 | 10/10 | 2026-03-18 | Docs review round 1: comprehensive and clear, adheres to all conventions. |
 
 **Status**: ⏳ Planned
 **Approved**: No
