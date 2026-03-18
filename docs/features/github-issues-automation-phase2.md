@@ -9,7 +9,7 @@ Follow-up feature for automating GitHub issue creation and updates after Phase 1
 | Reviewer | Round | Score | Date | Notes |
 |----------|-------|-------|------|-------|
 | GateCode | 1 | 9/10 | 2026-03-18 | GateCode round 1: added concrete command/test/audit constraints; ready for security review. |
-| GateSec  | - | -/10 | - | Mandatory security review before implementation. |
+| GateSec  | 1 | 9/10 | 2026-03-18 | GateSec round 1: added tempfile/map-integrity/redaction hardening; renamed section for validator compliance. |
 | GateDocs | - | -/10 | - | Pending documentation review. |
 
 **Status**: ⏳ Planned
@@ -28,13 +28,17 @@ Follow-up feature for automating GitHub issue creation and updates after Phase 1
 - Reuse `GITHUB_REPO_TOKEN` with least-privilege scope (`issues:write`, `metadata:read`).
 - Keep all issue body content in files/stdin (`--body-file`) to avoid shell interpolation risk.
 
-## Implementation Scope
+## Implementation Steps
 
 - Add `scripts/sync_github_issues.py` for idempotent create/update flows from `tmp/feature-issue-export/`.
 - Support `--dry-run` (no writes), `--create-missing`, and `--update-existing` modes.
 - Keep mapping in a checked-in machine-readable file (`tmp/feature-issue-export/issue-map.json`) generated from successful runs.
 - Disallow free-form command execution; only explicit `gh issue create|edit|view|list` argument sets are permitted.
 - Keep phase-1 `scripts/migrate_features.py --verify` as a hard preflight check before any write mode.
+- Pass `redactor` to every `run_shell()` call and apply `redactor.redact()` to all `gh` stdout/stderr before logging, audit, or user-facing output.
+- Use `tempfile.NamedTemporaryFile` (or equivalent) for `--body-file` content and delete in a `finally` block — no leftover files containing issue markdown.
+- Record every write operation (create/update) via `audit.record()` with redacted detail text.
+- Validate `issue-map.json` integrity on load: reject entries where the `source` path escapes `docs/features/` (reuse the `resolve()` + `relative_to()` boundary pattern from `migrate_features.py --verify`).
 
 ## Non-Goals
 
@@ -46,8 +50,9 @@ Follow-up feature for automating GitHub issue creation and updates after Phase 1
 
 - Threat model update for command injection, token leakage, and auth scope creep.
 - Verification that no new plaintext secret paths are introduced.
-- Validation that all `gh` operations are redacted in logs and audit entries.
+- Validation that all `gh` operations are redacted in logs and audit entries — `gh` may echo tokens in HTTP-level error messages or debug output; all subprocess stderr must pass through `SecretRedactor`.
 - GateSec score must be `>= 9/10` in this feature doc before implementation starts.
+- `issue-map.json` must be treated as untrusted input on read: a tampered map could redirect `--update-existing` to an unrelated issue number. Validate source paths and consider signing or hash-binding entries.
 
 ## Test Plan Requirements
 
@@ -55,6 +60,9 @@ Follow-up feature for automating GitHub issue creation and updates after Phase 1
 - Unit tests must cover malicious inputs in titles/body/labels and prove no command injection path.
 - Integration tests (mocked subprocess) must validate create/update decision logic and idempotency.
 - Negative tests must cover missing token, failed preflight parity check, and rejected unsupported flags.
+- Unit test for `issue-map.json` path-escape rejection (source outside `docs/features/`, issue number as path component).
+- Unit test confirming `--body-file` tempfile is deleted even when `gh` returns non-zero exit.
+- Unit test confirming all `gh` subprocess output (stdout and stderr) is passed through `SecretRedactor` before audit or display.
 
 ## Acceptance Criteria
 
@@ -64,3 +72,6 @@ Follow-up feature for automating GitHub issue creation and updates after Phase 1
 - [ ] Tests cover command construction and untrusted markdown/body inputs.
 - [ ] Write-mode runs are blocked unless phase-1 parity verification passes in the same execution context.
 - [ ] Dry-run output is deterministic and includes proposed issue number/title/label diffs.
+- [ ] All `gh` subprocess output (stdout + stderr) passes through `SecretRedactor` before logging, audit, or user display.
+- [ ] `--body-file` tempfiles are cleaned up in a `finally` block — no leftover files on success or failure.
+- [ ] `issue-map.json` source paths are boundary-checked on load (reject escapes outside `docs/features/`).
