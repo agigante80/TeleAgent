@@ -500,6 +500,37 @@ def test_verify_parity_report_rejects_malformed_hash_fields(tmp_path):
     assert any("malformed output_sha256" in error for error in errors)
 
 
+def test_verify_parity_report_rejects_malformed_json(tmp_path):
+    module = _load_module()
+    features_dir = tmp_path / "docs" / "features"
+    output_dir = tmp_path / "tmp" / "feature-issue-export"
+    features_dir.mkdir(parents=True)
+    output_dir.mkdir(parents=True)
+
+    (output_dir / "parity-report.json").write_text("{not-json", encoding="utf-8")
+
+    errors = module.verify_parity_report(features_dir, output_dir)
+
+    assert any("malformed JSON" in error for error in errors)
+
+
+def test_verify_parity_report_rejects_non_object_top_level(tmp_path):
+    module = _load_module()
+    features_dir = tmp_path / "docs" / "features"
+    output_dir = tmp_path / "tmp" / "feature-issue-export"
+    features_dir.mkdir(parents=True)
+    output_dir.mkdir(parents=True)
+
+    (output_dir / "parity-report.json").write_text(
+        json.dumps(["not", "an", "object"]) + "\n",
+        encoding="utf-8",
+    )
+
+    errors = module.verify_parity_report(features_dir, output_dir)
+
+    assert errors == ["invalid parity report: top-level JSON must be an object"]
+
+
 def test_label_values_are_sanitized():
     module = _load_module()
     doc = module.FeatureDoc(

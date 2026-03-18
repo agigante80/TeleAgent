@@ -220,7 +220,12 @@ def verify_parity_report(features_dir: Path, output_dir: Path) -> list[str]:
     if not report_path.exists():
         return [f"missing parity report: {report_path.as_posix()}"]
 
-    report = json.loads(report_path.read_text(encoding="utf-8"))
+    try:
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        return [f"invalid parity report: malformed JSON ({exc.msg})"]
+    if not isinstance(report, dict):
+        return ["invalid parity report: top-level JSON must be an object"]
     items = report.get("items")
     if not isinstance(items, list):
         return ["invalid parity report: `items` must be a list"]
