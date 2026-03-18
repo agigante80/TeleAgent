@@ -41,7 +41,6 @@ env:
   IMAGE_NAME: ${{ github.repository_owner }}/agentgate
   DOCKERHUB_IMAGE_NAME: agigante80/agentgate
   DOCKER_PLATFORMS: 'linux/amd64,linux/arm64'
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 # ============================================================================
 # Jobs
@@ -61,7 +60,7 @@ jobs:
       is_release: ${{ steps.version.outputs.is_release }}
     steps:
       - name: 📥 Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0  # full history needed for tag comparison
 
@@ -144,10 +143,10 @@ jobs:
     needs: version
     steps:
       - name: 📥 Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: 🐍 Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -174,10 +173,10 @@ jobs:
     needs: version
     steps:
       - name: 📥 Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: 🐍 Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -201,7 +200,7 @@ jobs:
     needs: version
     steps:
       - name: 📥 Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: 🔍 Validate short description length
         run: |
@@ -225,10 +224,10 @@ jobs:
     if: ${{ github.event.inputs.skip_tests != 'true' }}
     steps:
       - name: 📥 Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: 🐍 Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -242,7 +241,7 @@ jobs:
 
       - name: 📤 Upload coverage report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-report
           path: coverage.xml
@@ -274,23 +273,23 @@ jobs:
       )
     steps:
       - name: 📥 Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: 🐳 Set up QEMU (multi-platform support)
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
       - name: 🐳 Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: 🔐 Log in to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 🔐 Log in to Docker Hub
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: docker.io
           username: ${{ secrets.DOCKERHUB_USER }}
@@ -318,7 +317,7 @@ jobs:
           echo "📦 Docker tags: ${TAGS}"
 
       - name: 🏗️ Build and push
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .
           platforms: ${{ env.DOCKER_PLATFORMS }}
@@ -363,13 +362,13 @@ jobs:
       security-events: write
     steps:
       - name: 📥 Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: 🐳 Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: 🏗️ Build image for scanning (local, no push)
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: false
@@ -378,7 +377,7 @@ jobs:
           cache-from: type=gha,scope=${{ github.ref_name }}
 
       - name: 🔒 Run Trivy vulnerability scan
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.35.0
         with:
           image-ref: agentgate:scan
           format: sarif
@@ -414,7 +413,7 @@ jobs:
       (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/development')
     steps:
       - name: 📥 Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -443,7 +442,7 @@ jobs:
           git push origin refs/tags/develop-latest
 
       - name: 🚀 Create GitHub Pre-Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: develop-latest
           name: "develop-latest — v${{ needs.version.outputs.version }}"
@@ -503,7 +502,7 @@ jobs:
       github.ref == 'refs/heads/main'
     steps:
       - name: 📥 Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -521,7 +520,7 @@ jobs:
           echo "EOF" >> $GITHUB_OUTPUT
 
       - name: 🎉 Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.version.outputs.version }}
           name: Release v${{ needs.version.outputs.version }}
@@ -570,7 +569,7 @@ jobs:
       github.ref == 'refs/heads/main'
     steps:
       - name: 📥 Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: 📝 Read short description
         id: get-desc
@@ -579,7 +578,7 @@ jobs:
           echo "short=${SHORT}" >> $GITHUB_OUTPUT
 
       - name: 🐳 Update Docker Hub description
-        uses: peter-evans/dockerhub-description@v4
+        uses: peter-evans/dockerhub-description@v5
         with:
           username: ${{ secrets.DOCKERHUB_USER }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
