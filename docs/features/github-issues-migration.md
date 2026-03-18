@@ -283,6 +283,8 @@ Once all features are successfully migrated and verified on GitHub:
 | `test_verify_parity_report_rejects_untracked_export_markdown` | `verify_parity_report()` rejects orphan `*.md` files in the export directory that are not referenced by parity items. |
 | `test_verify_parity_report_rejects_malformed_hash_fields` | `verify_parity_report()` rejects parity items whose `source_sha256`/`output_sha256` values are not canonical 64-char lowercase hex digests. |
 | `test_verify_parity_report_rejects_malformed_json` | `verify_parity_report()` returns a validation error (not a traceback) when `parity-report.json` is malformed JSON. |
+| `test_verify_parity_report_rejects_non_utf8_report_file` | `verify_parity_report()` returns a validation error (not a traceback) when `parity-report.json` cannot be decoded as UTF-8 text. |
+| `test_verify_parity_report_rejects_unreadable_report_path` | `verify_parity_report()` returns a validation error (not a traceback) when `parity-report.json` exists but cannot be read as a normal UTF-8 file. |
 | `test_verify_parity_report_rejects_non_object_top_level` | `verify_parity_report()` rejects reports whose top-level JSON is not an object. |
 | `test_verify_parity_report_rejects_top_level_key_drift` | `verify_parity_report()` rejects reports with missing required top-level keys or unexpected top-level keys. |
 | `test_verify_parity_report_rejects_malformed_header_field_types` | `verify_parity_report()` rejects reports with non-integer `schema_version`, `source_count`, or `export_count` fields. |
@@ -304,6 +306,7 @@ Once all features are successfully migrated and verified on GitHub:
 -   `--verify` rejects duplicate parity items and malformed hash fields so each source/output pair is unique and hash encodings are canonical.
 -   `--verify` rejects orphan exported markdown files that are present in `tmp/feature-issue-export/` but not tracked in `parity-report.json`.
 -   `--verify` fails gracefully with explicit errors when `parity-report.json` is malformed or has an invalid top-level shape.
+-   `--verify` fails gracefully with explicit errors when `parity-report.json` cannot be read as UTF-8 text (including unreadable paths).
 -   `--verify` enforces strict key allowlists: top-level reports and per-item entries must use the canonical schema keys only (no missing or unexpected keys).
 -   `--verify` enforces strict schema typing: top-level `schema_version`/`source_count`/`export_count` must be integers, and item metadata fields must use canonical string/list-of-string types.
 -   `--verify` treats booleans as invalid top-level counts/version values even though Python considers `bool` a subclass of `int`.

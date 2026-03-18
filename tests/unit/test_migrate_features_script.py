@@ -543,6 +543,34 @@ def test_verify_parity_report_rejects_malformed_json(tmp_path):
     assert any("malformed JSON" in error for error in errors)
 
 
+def test_verify_parity_report_rejects_non_utf8_report_file(tmp_path):
+    module = _load_module()
+    features_dir = tmp_path / "docs" / "features"
+    output_dir = tmp_path / "tmp" / "feature-issue-export"
+    features_dir.mkdir(parents=True)
+    output_dir.mkdir(parents=True)
+
+    (output_dir / "parity-report.json").write_bytes(b"\xff\xfe\xfd")
+
+    errors = module.verify_parity_report(features_dir, output_dir)
+
+    assert errors and "unable to read report file as UTF-8" in errors[0]
+
+
+def test_verify_parity_report_rejects_unreadable_report_path(tmp_path):
+    module = _load_module()
+    features_dir = tmp_path / "docs" / "features"
+    output_dir = tmp_path / "tmp" / "feature-issue-export"
+    features_dir.mkdir(parents=True)
+    output_dir.mkdir(parents=True)
+
+    (output_dir / "parity-report.json").mkdir()
+
+    errors = module.verify_parity_report(features_dir, output_dir)
+
+    assert errors and "unable to read report file as UTF-8" in errors[0]
+
+
 def test_verify_parity_report_rejects_non_object_top_level(tmp_path):
     module = _load_module()
     features_dir = tmp_path / "docs" / "features"

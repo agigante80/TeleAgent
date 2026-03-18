@@ -248,7 +248,11 @@ def verify_parity_report(features_dir: Path, output_dir: Path) -> list[str]:
         return [f"missing parity report: {report_path.as_posix()}"]
 
     try:
-        report = json.loads(report_path.read_text(encoding="utf-8"))
+        report_text = report_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        return [f"invalid parity report: unable to read report file as UTF-8 ({exc})"]
+    try:
+        report = json.loads(report_text)
     except json.JSONDecodeError as exc:
         return [f"invalid parity report: malformed JSON ({exc.msg})"]
     if not isinstance(report, dict):
