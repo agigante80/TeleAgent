@@ -286,6 +286,7 @@ Once all features are successfully migrated and verified on GitHub:
 | `test_verify_parity_report_rejects_non_object_top_level` | `verify_parity_report()` rejects reports whose top-level JSON is not an object. |
 | `test_verify_parity_report_rejects_top_level_key_drift` | `verify_parity_report()` rejects reports with missing required top-level keys or unexpected top-level keys. |
 | `test_verify_parity_report_rejects_malformed_header_field_types` | `verify_parity_report()` rejects reports with non-integer `schema_version`, `source_count`, or `export_count` fields. |
+| `test_verify_parity_report_rejects_boolean_header_fields` | `verify_parity_report()` treats boolean values as invalid for `schema_version`, `source_count`, and `export_count` (strict integer-only schema typing). |
 | `test_verify_parity_report_rejects_malformed_metadata_fields` | `verify_parity_report()` rejects parity items with non-string metadata fields (`title`/`slug`/`status`/`priority`) or non-string label entries. |
 | `test_verify_parity_report_rejects_item_key_drift` | `verify_parity_report()` rejects parity items with missing required fields or unexpected extra keys. |
 | `test_verify_parity_report_rejects_unparseable_source_doc` | `verify_parity_report()` fails gracefully when a parity item points to a source doc that cannot be parsed into the expected feature format. |
@@ -305,6 +306,7 @@ Once all features are successfully migrated and verified on GitHub:
 -   `--verify` fails gracefully with explicit errors when `parity-report.json` is malformed or has an invalid top-level shape.
 -   `--verify` enforces strict key allowlists: top-level reports and per-item entries must use the canonical schema keys only (no missing or unexpected keys).
 -   `--verify` enforces strict schema typing: top-level `schema_version`/`source_count`/`export_count` must be integers, and item metadata fields must use canonical string/list-of-string types.
+-   `--verify` treats booleans as invalid top-level counts/version values even though Python considers `bool` a subclass of `int`.
 -   `--verify` fails gracefully (no traceback) when parity-referenced source/output files are unreadable as UTF-8 or when a source doc is structurally unparseable.
 
 ### End-to-End Review Process Simulation

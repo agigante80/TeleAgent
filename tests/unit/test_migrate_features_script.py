@@ -629,6 +629,39 @@ def test_verify_parity_report_rejects_malformed_header_field_types(tmp_path):
     assert any("`export_count` must be an integer" in error for error in errors)
 
 
+def test_verify_parity_report_rejects_boolean_header_fields(tmp_path):
+    module = _load_module()
+    features_dir = tmp_path / "docs" / "features"
+    output_dir = tmp_path / "tmp" / "feature-issue-export"
+    features_dir.mkdir(parents=True)
+
+    source = features_dir / "bool-header.md"
+    source.write_text(
+        "\n".join(
+            [
+                "# Boolean Header",
+                "",
+                "> Status: **Planned** | Priority: Medium | Last reviewed: 2026-03-18",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    module.export_features(features_dir, output_dir)
+    report_path = output_dir / "parity-report.json"
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    report["schema_version"] = True
+    report["source_count"] = False
+    report["export_count"] = True
+    report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    errors = module.verify_parity_report(features_dir, output_dir)
+
+    assert any("`schema_version` must be an integer" in error for error in errors)
+    assert any("`source_count` must be an integer" in error for error in errors)
+    assert any("`export_count` must be an integer" in error for error in errors)
+
+
 def test_verify_parity_report_rejects_malformed_metadata_fields(tmp_path):
     module = _load_module()
     features_dir = tmp_path / "docs" / "features"

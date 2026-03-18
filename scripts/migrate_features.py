@@ -238,6 +238,10 @@ def _read_utf8_file(path: Path, index: int, role: str, errors: list[str]) -> str
         return None
 
 
+def _is_plain_int(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
 def verify_parity_report(features_dir: Path, output_dir: Path) -> list[str]:
     report_path = output_dir / "parity-report.json"
     if not report_path.exists():
@@ -273,20 +277,20 @@ def verify_parity_report(features_dir: Path, output_dir: Path) -> list[str]:
     source_count = report.get("source_count")
     export_count = report.get("export_count")
 
-    if not isinstance(schema_version, int):
+    if not _is_plain_int(schema_version):
         errors.append("invalid parity report: `schema_version` must be an integer")
     elif schema_version != 2:
         errors.append(
             f"unexpected schema_version: expected 2, got {schema_version!r}"
         )
-    if not isinstance(source_count, int):
+    if not _is_plain_int(source_count):
         errors.append("invalid parity report: `source_count` must be an integer")
     elif source_count != len(expected_sources):
         errors.append(
             "source_count mismatch: "
             f"expected {len(expected_sources)}, got {source_count!r}"
         )
-    if not isinstance(export_count, int):
+    if not _is_plain_int(export_count):
         errors.append("invalid parity report: `export_count` must be an integer")
     elif export_count != len(items):
         errors.append(
