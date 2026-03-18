@@ -279,6 +279,8 @@ Once all features are successfully migrated and verified on GitHub:
 | `test_verify_parity_report_detects_tampered_export_with_updated_hash` | `verify_parity_report()` rejects manipulated exports even when `output_sha256` is maliciously updated in the report. |
 | `test_verify_parity_report_rejects_source_path_escape` | `verify_parity_report()` rejects parity items whose `source` points outside `docs/features/`. |
 | `test_verify_parity_report_rejects_output_path_escape` | `verify_parity_report()` rejects parity items whose `output` points outside the configured export directory. |
+| `test_verify_parity_report_rejects_duplicate_entries` | `verify_parity_report()` rejects parity reports that duplicate the same source/output paths across multiple items. |
+| `test_verify_parity_report_rejects_malformed_hash_fields` | `verify_parity_report()` rejects parity items whose `source_sha256`/`output_sha256` values are not canonical 64-char lowercase hex digests. |
 
 ### Manual Verification of Migration
 
@@ -289,6 +291,7 @@ Once all features are successfully migrated and verified on GitHub:
 -   Run `python scripts/migrate_features.py --verify` before posting to GitHub; verification must pass with zero mismatches.
 -   `--verify` now enforces parity content consistency (title/slug/status/priority/labels) and deterministic render matching, reducing reliance on manual report spot-checking alone.
 -   `--verify` rejects path-boundary escapes in parity entries (`source` must stay under `docs/features/`; `output` must stay under `tmp/feature-issue-export/`).
+-   `--verify` rejects duplicate parity items and malformed hash fields so each source/output pair is unique and hash encodings are canonical.
 
 ### End-to-End Review Process Simulation
 

@@ -23,6 +23,7 @@ STATUS_RE = re.compile(
 )
 H2_RE = re.compile(r"^##\s+(.+)$", re.MULTILINE)
 NON_LABEL_CHARS_RE = re.compile(r"[^a-z0-9]+")
+SHA256_HEX_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 @dataclass(frozen=True)
@@ -228,6 +229,7 @@ def verify_parity_report(features_dir: Path, output_dir: Path) -> list[str]:
     output_root = output_dir.resolve()
     expected_sources = {path.resolve() for path in _feature_sources(features_dir)}
     reported_sources: set[Path] = set()
+    reported_outputs: set[Path] = set()
     errors: list[str] = []
 
     if report.get("schema_version") != 2:
@@ -256,14 +258,32 @@ def verify_parity_report(features_dir: Path, output_dir: Path) -> list[str]:
         if not all(isinstance(value, str) for value in (source_raw, output_raw, source_hash, output_hash)):
             errors.append(f"item {index}: missing required string fields")
             continue
+        source_hash_valid = bool(SHA256_HEX_RE.fullmatch(source_hash))
+        output_hash_valid = bool(SHA256_HEX_RE.fullmatch(output_hash))
+        if not source_hash_valid:
+            errors.append(f"item {index}: malformed source_sha256 for {source_raw}")
+        if not output_hash_valid:
+            errors.append(f"item {index}: malformed output_sha256 for {output_raw}")
 
         source = Path(source_raw)
         output = Path(output_raw)
         source_resolved = source.resolve()
         output_resolved = output.resolve()
-        reported_sources.add(source_resolved)
         expected_output: Path | None = None
         parsed_doc: FeatureDoc | None = None
+
+        if source_resolved in reported_sources:
+            errors.append(
+                f"item {index}: duplicate source entry for {source.as_posix()}"
+            )
+        else:
+            reported_sources.add(source_resolved)
+        if output_resolved in reported_outputs:
+            errors.append(
+                f"item {index}: duplicate output entry for {output.as_posix()}"
+            )
+        else:
+            reported_outputs.add(output_resolved)
 
         try:
             source_resolved.relative_to(features_root)
@@ -311,7 +331,7 @@ def verify_parity_report(features_dir: Path, output_dir: Path) -> list[str]:
                     f"item {index}: labels mismatch for {source.as_posix()}"
                 )
             actual_source_hash = _sha256_text(source.read_text(encoding="utf-8"))
-            if actual_source_hash != source_hash:
+            if source_hash_valid and actual_source_hash != source_hash:
                 errors.append(
                     f"item {index}: source hash mismatch for {source.as_posix()}"
                 )
@@ -326,7 +346,7 @@ def verify_parity_report(features_dir: Path, output_dir: Path) -> list[str]:
                     f"(expected {expected_output.as_posix()}, got {output.as_posix()})"
                 )
             actual_output_hash = _sha256_text(output.read_text(encoding="utf-8"))
-            if actual_output_hash != output_hash:
+            if output_hash_valid and actual_output_hash != output_hash:
                 errors.append(
                     f"item {index}: output hash mismatch for {output.as_posix()}"
                 )
