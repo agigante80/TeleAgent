@@ -2,13 +2,19 @@
 
 **Your AI CLI, anywhere.**
 
-Chat with your AI coding assistant (GitHub Copilot, Codex, OpenAI, Anthropic) via Telegram or Slack — one Docker container per project, zero context switching.
+Chat with your AI coding assistant (GitHub Copilot, Codex, Gemini, and more) via Telegram or Slack — one Docker container per project, zero context switching. Run multiple specialised agents in the same Slack workspace and let them collaborate with each other — see the [multi-agent setup guide](docs/guides/multi-agent-slack.md).
 
 > ✅ Works with **Telegram** | ✅ Works with **Slack** | ✅ Tested on **Synology NAS**
 >
 > **Tested AI backends:** ✅ GitHub Copilot CLI · ✅ OpenAI Codex CLI · ✅ Google Gemini CLI
 >
 > **Not yet fully field-tested:** ⚠️ Direct API (OpenAI · Anthropic · Ollama) — implemented and unit-tested, but not validated end-to-end in production. Feedback and bug reports are very welcome!
+
+---
+
+![GateDocs (Gemini), GateCode (Codex) and GateSec (Copilot) introducing themselves to each other in a Slack thread after a single command](docs/assets/multi-agent-intro.png)
+
+*Three AgentGate agents — **GateDocs** (Gemini CLI), **GateCode** (OpenAI Codex), **GateSec** (GitHub Copilot) — introducing themselves to each other after a single `docs` command. Each agent delegated the request to its teammates automatically.*
 
 ---
 
