@@ -79,17 +79,6 @@ All three agents always participate in every round regardless of who started it.
 
 ---
 
-## Migration Mode (Phase 1)
-
-During the GitHub-issues migration phase:
-
-- `docs/features/*.md` remains the review source-of-truth.
-- Matching GitHub issues are tracking mirrors created from exported markdown.
-- Keep the existing `dev -> sec -> docs` delegation chain exactly as-is.
-- Do not replace this protocol with issue-native review until phase 2 automation is approved.
-
----
-
 ## What Each Reviewer Checks
 
 ### GateCode (dev) — Technical Completeness
@@ -360,8 +349,7 @@ does not replace the `[DELEGATE]` handoff or the Team Review table.
 - If the feature doc does not yet have a Team Review table, the first reviewer adds it.
 - Team Review table rows from prior rounds are *append-only* — never delete or modify
   historical rows. They form the audit trail for the review chain.
-- The process applies to any file under `docs/features/` (except `_template.md`) and
-  to guide files under `docs/guides/` when explicitly requested.
+- The process applies to any guide file under `docs/guides/` when explicitly requested.
 
 ---
 
