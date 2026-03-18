@@ -531,6 +531,42 @@ def test_verify_parity_report_rejects_non_object_top_level(tmp_path):
     assert errors == ["invalid parity report: top-level JSON must be an object"]
 
 
+def test_verify_parity_report_rejects_top_level_key_drift(tmp_path):
+    module = _load_module()
+    features_dir = tmp_path / "docs" / "features"
+    output_dir = tmp_path / "tmp" / "feature-issue-export"
+    features_dir.mkdir(parents=True)
+    output_dir.mkdir(parents=True)
+
+    missing_key_report = {
+        "schema_version": 2,
+        "source_count": 0,
+        "items": [],
+    }
+    (output_dir / "parity-report.json").write_text(
+        json.dumps(missing_key_report, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    errors = module.verify_parity_report(features_dir, output_dir)
+    assert errors == [
+        "invalid parity report: missing required top-level keys: export_count"
+    ]
+
+    extra_key_report = {
+        "schema_version": 2,
+        "source_count": 0,
+        "export_count": 0,
+        "items": [],
+        "extra": "nope",
+    }
+    (output_dir / "parity-report.json").write_text(
+        json.dumps(extra_key_report, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    errors = module.verify_parity_report(features_dir, output_dir)
+    assert errors == ["invalid parity report: unexpected top-level keys: extra"]
+
+
 def test_verify_parity_report_rejects_malformed_header_field_types(tmp_path):
     module = _load_module()
     features_dir = tmp_path / "docs" / "features"
@@ -595,6 +631,42 @@ def test_verify_parity_report_rejects_malformed_metadata_fields(tmp_path):
     errors = module.verify_parity_report(features_dir, output_dir)
 
     assert any("malformed metadata fields" in error for error in errors)
+
+
+def test_verify_parity_report_rejects_item_key_drift(tmp_path):
+    module = _load_module()
+    features_dir = tmp_path / "docs" / "features"
+    output_dir = tmp_path / "tmp" / "feature-issue-export"
+    features_dir.mkdir(parents=True)
+
+    source = features_dir / "keys.md"
+    source.write_text(
+        "\n".join(
+            [
+                "# Key Drift",
+                "",
+                "> Status: **Planned** | Priority: Medium | Last reviewed: 2026-03-18",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    module.export_features(features_dir, output_dir)
+    report_path = output_dir / "parity-report.json"
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    report["items"][0].pop("slug")
+    report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    errors = module.verify_parity_report(features_dir, output_dir)
+    assert any("missing required fields: slug" in error for error in errors)
+
+    module.export_features(features_dir, output_dir)
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    report["items"][0]["extra"] = "nope"
+    report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    errors = module.verify_parity_report(features_dir, output_dir)
+    assert any("unexpected fields present: extra" in error for error in errors)
 
 
 def test_verify_parity_report_rejects_unparseable_source_doc(tmp_path):

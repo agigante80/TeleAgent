@@ -24,6 +24,18 @@ STATUS_RE = re.compile(
 H2_RE = re.compile(r"^##\s+(.+)$", re.MULTILINE)
 NON_LABEL_CHARS_RE = re.compile(r"[^a-z0-9]+")
 SHA256_HEX_RE = re.compile(r"^[0-9a-f]{64}$")
+REQUIRED_REPORT_KEYS = {"schema_version", "source_count", "export_count", "items"}
+REQUIRED_ITEM_KEYS = {
+    "source",
+    "output",
+    "title",
+    "slug",
+    "status",
+    "priority",
+    "labels",
+    "source_sha256",
+    "output_sha256",
+}
 
 
 @dataclass(frozen=True)
@@ -237,6 +249,15 @@ def verify_parity_report(features_dir: Path, output_dir: Path) -> list[str]:
         return [f"invalid parity report: malformed JSON ({exc.msg})"]
     if not isinstance(report, dict):
         return ["invalid parity report: top-level JSON must be an object"]
+    report_keys = set(report.keys())
+    missing_report_keys = sorted(REQUIRED_REPORT_KEYS - report_keys)
+    unexpected_report_keys = sorted(report_keys - REQUIRED_REPORT_KEYS)
+    if missing_report_keys:
+        errors = ", ".join(missing_report_keys)
+        return [f"invalid parity report: missing required top-level keys: {errors}"]
+    if unexpected_report_keys:
+        extras = ", ".join(unexpected_report_keys)
+        return [f"invalid parity report: unexpected top-level keys: {extras}"]
     items = report.get("items")
     if not isinstance(items, list):
         return ["invalid parity report: `items` must be a list"]
@@ -275,6 +296,21 @@ def verify_parity_report(features_dir: Path, output_dir: Path) -> list[str]:
     for index, item in enumerate(items):
         if not isinstance(item, dict):
             errors.append(f"invalid item at index {index}: expected object")
+            continue
+        item_keys = set(item.keys())
+        missing_item_keys = sorted(REQUIRED_ITEM_KEYS - item_keys)
+        unexpected_item_keys = sorted(item_keys - REQUIRED_ITEM_KEYS)
+        if missing_item_keys:
+            missing = ", ".join(missing_item_keys)
+            errors.append(
+                f"item {index}: missing required fields: {missing}"
+            )
+            continue
+        if unexpected_item_keys:
+            extras = ", ".join(unexpected_item_keys)
+            errors.append(
+                f"item {index}: unexpected fields present: {extras}"
+            )
             continue
 
         source_raw = item.get("source")
