@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import sys
@@ -173,6 +174,40 @@ def test_parse_adversarial_content_literal_passthrough(tmp_path):
         "priority:medium",
         "review:pending",
     ]
+    assert parity["schema_version"] == 2
+    assert len(parity["items"][0]["source_sha256"]) == 64
+    assert len(parity["items"][0]["output_sha256"]) == 64
+
+
+def test_parity_report_hashes_match_source_and_export(tmp_path):
+    module = _load_module()
+    features_dir = tmp_path / "docs" / "features"
+    output_dir = tmp_path / "tmp" / "feature-issue-export"
+    features_dir.mkdir(parents=True)
+
+    source = features_dir / "hash.md"
+    source.write_text(
+        "\n".join(
+            [
+                "# Hash Check",
+                "",
+                "> Status: **Planned** | Priority: Low | Last reviewed: 2026-03-18",
+                "",
+                "Summary.",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    module.export_features(features_dir, output_dir)
+    parity = json.loads((output_dir / "parity-report.json").read_text(encoding="utf-8"))
+    item = parity["items"][0]
+    output_text = (output_dir / "hash.md").read_text(encoding="utf-8")
+
+    assert item["source_sha256"] == hashlib.sha256(
+        source.read_text(encoding="utf-8").encode("utf-8")
+    ).hexdigest()
+    assert item["output_sha256"] == hashlib.sha256(output_text.encode("utf-8")).hexdigest()
 
 
 def test_label_values_are_sanitized():

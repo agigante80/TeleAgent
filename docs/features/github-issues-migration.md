@@ -201,7 +201,7 @@ Create a Python script (e.g., `scripts/migrate_features.py`) that:
 -   Extracts key information (title, overview, problem statement, design, env vars, files to change, etc.).
 -   Generates Markdown content formatted according to the new `feature.md` GitHub issue template.
 -   Outputs generated Markdown files to `tmp/feature-issue-export/` for user review and manual GitHub issue creation.
--   Writes a deterministic parity manifest (`tmp/feature-issue-export/parity-report.json`) mapping each source doc to exported issue metadata (title, slug, labels).
+-   Writes a deterministic parity manifest (`tmp/feature-issue-export/parity-report.json`) mapping each source doc to exported issue metadata (title, slug, labels) plus `source_sha256`/`output_sha256` hashes for integrity verification.
 -   The `tmp/` directory must be `.gitignored` to prevent accidental commit of export artifacts (feature docs may contain example credentials or security notes not intended for issue tracker publication).
 
 ### Step 3 — Update Feature Review Process Guide
@@ -279,6 +279,7 @@ Once all features are successfully migrated and verified on GitHub:
 -   Run `scripts/migrate_features.py` and manually inspect the generated Markdown files for accuracy and completeness.
 -   Manually create GitHub issues from the generated Markdown and verify their appearance on GitHub (labels, title, content).
 -   Confirm `tmp/feature-issue-export/parity-report.json` has 1:1 mapping for every `docs/features/*.md` source (excluding `_template.md`).
+-   Confirm each parity item includes `source_sha256` and `output_sha256`; use these hashes to ensure reviewed export artifacts are exactly the ones posted to GitHub.
 -   Verify parity report content (not just existence): spot-check that titles, labels, and section headings match the source docs. The parity report is the trust anchor for the cleanup phase — a buggy report could lead to premature doc deletion.
 
 ### End-to-End Review Process Simulation
@@ -348,7 +349,7 @@ Delete `docs/roadmap.md` only in cleanup phase after parity is validated.
 -   [x] `README.md` and docs-agent instructions (`.gemini/docs-agent.md` and/or `skills/docs-agent.md`) are updated with migration/transition guidance.
 -   [ ] Manual verification of migrated issues on GitHub confirms accuracy and completeness.
 -   [x] The team has approved the new review process.
--   [x] A parity report (`tmp/feature-issue-export/parity-report.json`) confirms every migrated feature doc has a corresponding GitHub issue with mapped status/priority labels.
+-   [x] A parity report (`tmp/feature-issue-export/parity-report.json`) confirms every migrated feature doc has a corresponding GitHub issue with mapped status/priority labels and deterministic `source_sha256`/`output_sha256` integrity hashes.
 -   [x] Cleanup work (`docs/roadmap.md` and migrated legacy docs removal) is tracked in a follow-up PR/feature.
 -   [x] Phase 2 (automated GitHub interaction) has its own feature doc with a security review requirement before implementation. `docs align-sync` is confirmed retained and not deprecated by this migration.
 -   [ ] The `VERSION` file bump follows `docs/versioning.md` for the exact delivered scope.

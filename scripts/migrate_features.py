@@ -10,6 +10,7 @@ Phase 1 migration utility:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 from dataclasses import dataclass
@@ -54,6 +55,10 @@ def _clean_title(line: str) -> str:
 def _normalize_label(value: str) -> str:
     normalized = NON_LABEL_CHARS_RE.sub("-", value.strip().lower()).strip("-")
     return normalized or "unknown"
+
+
+def _sha256_text(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
 def _extract_intro(text: str) -> str:
@@ -176,7 +181,9 @@ def export_features(features_dir: Path, output_dir: Path) -> dict[str, object]:
     for source in features:
         doc = parse_feature_doc(source)
         target = output_dir / f"{doc.slug}.md"
-        target.write_text(render_issue_markdown(doc), encoding="utf-8")
+        issue_md = render_issue_markdown(doc)
+        target.write_text(issue_md, encoding="utf-8")
+        source_text = source.read_text(encoding="utf-8")
         manifest_items.append(
             {
                 "source": source.as_posix(),
@@ -186,11 +193,13 @@ def export_features(features_dir: Path, output_dir: Path) -> dict[str, object]:
                 "status": doc.status,
                 "priority": doc.priority,
                 "labels": doc.labels,
+                "source_sha256": _sha256_text(source_text),
+                "output_sha256": _sha256_text(issue_md),
             }
         )
 
     report = {
-        "schema_version": 1,
+        "schema_version": 2,
         "source_count": len(features),
         "export_count": len(manifest_items),
         "items": manifest_items,
