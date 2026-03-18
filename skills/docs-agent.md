@@ -157,30 +157,19 @@ This is picked up by the `@GateCode` developer agent if `TRUSTED_AGENT_BOT_IDS` 
 
 ### `docs roadmap-sync`
 
-Synchronises `docs/features/` and `docs/roadmap.md` so both reflect the same ground truth.
+Legacy command during migration. Feature tracking is moving to GitHub issues.
 
 **Steps (in order):**
 
-1. **Scan `docs/features/`** — for each spec (excluding `_template.md`):
-   - Inspect the corresponding source code in `src/` to determine if the feature is fully implemented.
-   - If *fully implemented*: delete the feature doc file and note it for roadmap removal.
-   - If *not in `docs/roadmap.md`*: add a new roadmap entry (do not create a duplicate).
-
-2. **Scan `docs/roadmap.md`** — for each entry:
-   - If *fully implemented* (confirmed in step 1 or via direct code inspection): remove the row.
-   - If *no corresponding file in `docs/features/`*: create the missing spec from `docs/features/_template.md`.
-
-3. **Re-prioritise** `docs/roadmap.md` if the ordering no longer reflects current project priorities — approved/foundational features first, nice-to-haves last. Briefly document any re-ordering rationale in the commit message.
-
-4. **Commit** all changes (deletions, additions, roadmap edits) in a single commit on `develop` with message:
-   ```
-   docs(roadmap): roadmap-sync — remove N implemented, add M missing specs, reprioritise
-   ```
+1. Export docs with `python scripts/migrate_features.py`.
+2. Review `tmp/feature-issue-export/parity-report.json` for 1:1 mapping.
+3. Manually post issues using `.github/ISSUE_TEMPLATE/feature.md`.
+4. Keep `docs/roadmap.md` as temporary cross-check until cleanup PR.
+5. Retire `docs roadmap-sync` after migration parity is verified.
 
 **Decision rules:**
-- "Fully implemented" = the feature's core behaviour exists in `src/` and works end-to-end. Partial implementations (stubs, `NotImplementedError`, config-only) do *not* qualify.
-- When in doubt about implementation status, check `src/` directly — do not rely solely on the feature doc status field.
-- Never delete a feature doc that is "Approved" but not yet implemented; only delete if the code is live.
+- Keep mixed-mode operation in phase 1: docs remain review source-of-truth while GitHub issues are tracking mirrors.
+- Never delete `docs/roadmap.md` or legacy specs until parity is verified and cleanup is explicitly approved.
 
 ---
 
@@ -219,6 +208,8 @@ Synchronises `docs/features/` and `docs/roadmap.md` so both reflect the same gro
 ```
 ✓  docs lint passed — N specs checked, roadmap consistent, README config coverage complete.
 ```
+
+`docs align-sync` is not part of the GitHub-issues migration and remains required.
 
 **Passthrough guidance:** a passthrough var is one that appears in `.env.example` or `docker-compose.yml.example` but is NOT declared in `src/config.py` — it is passed directly to a subprocess or Docker runtime. Mark it with `# passthrough: <reason>` on the same line. If a var has this marker but *is* actually in `src/config.py`, the lint script treats it as declared (stale detection is preserved).
 

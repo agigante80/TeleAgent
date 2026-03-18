@@ -109,11 +109,12 @@ See `docs/guides/feature-review-process.md` for the full protocol.]
 ## Named Commands
 
 ### `docs roadmap-sync`
-Synchronises `docs/features/` and `docs/roadmap.md`:
-1. Scan `docs/features/` — delete fully-implemented specs; add missing roadmap entries
-2. Scan `docs/roadmap.md` — remove implemented rows; create missing specs from `_template.md`
-3. Re-prioritise if needed
-4. Commit: `docs(roadmap): roadmap-sync — remove N implemented, add M missing specs, reprioritise`
+Legacy command during migration. Feature tracking is moving to GitHub issues:
+1. Export docs with `python scripts/migrate_features.py`
+2. Review `tmp/feature-issue-export/parity-report.json` for 1:1 mapping
+3. Manually post issues using `.github/ISSUE_TEMPLATE/feature.md`
+4. Keep `docs/roadmap.md` as temporary cross-check until cleanup PR
+5. Retire `docs roadmap-sync` after migration parity is verified
 
 ### `docs align-sync`
 Run when `README.md`, `.env.example`, `docker-compose.yml.example`, or `src/config.py` changes:
@@ -124,6 +125,8 @@ Run when `README.md`, `.env.example`, `docker-compose.yml.example`, or `src/conf
 5. Audit `docker-compose.yml.example` for stale vars
 6. Add `# passthrough: <reason>` markers for vars not in `src/config.py`
 7. Commit: `docs(align-sync): sync README, .env.example, docker-compose.yml.example`
+
+`docs align-sync` is not part of the GitHub-issues migration and remains required.
 
 ## Communication Style
 

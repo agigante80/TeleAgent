@@ -79,6 +79,17 @@ All three agents always participate in every round regardless of who started it.
 
 ---
 
+## Migration Mode (Phase 1)
+
+During the GitHub-issues migration phase:
+
+- `docs/features/*.md` remains the review source-of-truth.
+- Matching GitHub issues are tracking mirrors created from exported markdown.
+- Keep the existing `dev -> sec -> docs` delegation chain exactly as-is.
+- Do not replace this protocol with issue-native review until phase 2 automation is approved.
+
+---
+
 ## What Each Reviewer Checks
 
 ### GateCode (dev) — Technical Completeness

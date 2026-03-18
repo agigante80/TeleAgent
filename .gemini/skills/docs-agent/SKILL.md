@@ -155,25 +155,15 @@ This is picked up by the `@GateCode` developer agent if `TRUSTED_AGENT_BOT_IDS` 
 
 ### `docs roadmap-sync`
 
-Synchronises `docs/features/` and `docs/roadmap.md` so both reflect the same ground truth.
+Legacy command during migration. Feature tracking is moving to GitHub issues.
 
 **Steps (in order):**
 
-1. **Scan `docs/features/`** — for each spec (excluding `_template.md`):
-   - Inspect the corresponding source code in `src/` to determine if the feature is fully implemented.
-   - If *fully implemented*: delete the feature doc file and note it for roadmap removal.
-   - If *not in `docs/roadmap.md`*: add a new roadmap entry (do not create a duplicate).
-
-2. **Scan `docs/roadmap.md`** — for each entry:
-   - If *fully implemented* (confirmed in step 1 or via direct code inspection): remove the row.
-   - If *no corresponding file in `docs/features/`*: create the missing spec from `docs/features/_template.md`.
-
-3. **Re-prioritise** `docs/roadmap.md` if the ordering no longer reflects current project priorities.
-
-4. **Commit** all changes in a single commit on `develop` with message:
-   ```
-   docs(roadmap): roadmap-sync — remove N implemented, add M missing specs, reprioritise
-   ```
+1. Export docs with `python scripts/migrate_features.py`.
+2. Review `tmp/feature-issue-export/parity-report.json` for 1:1 mapping.
+3. Manually post issues using `.github/ISSUE_TEMPLATE/feature.md`.
+4. Keep `docs/roadmap.md` as temporary cross-check until cleanup PR.
+5. Retire `docs roadmap-sync` after migration parity is verified.
 
 ### `docs align-sync`
 
@@ -188,6 +178,8 @@ Synchronises `docs/features/` and `docs/roadmap.md` so both reflect the same gro
 5. Audit `docker-compose.yml.example` for stale vars
 6. Add passthrough markers for vars intentionally absent from `src/config.py`
 7. Commit: `docs(align-sync): sync README, .env.example, docker-compose.yml.example`
+
+`docs align-sync` is not part of the GitHub-issues migration and remains required.
 
 ## Communication Style
 

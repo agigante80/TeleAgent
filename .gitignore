@@ -33,3 +33,6 @@ Thumbs.db
 
 # Docker
 *.log
+
+# Local migration artifacts
+tmp/
