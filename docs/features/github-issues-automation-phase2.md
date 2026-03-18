@@ -10,7 +10,7 @@ Follow-up feature for automating GitHub issue creation and updates after Phase 1
 |----------|-------|-------|------|-------|
 | GateCode | 1 | 9/10 | 2026-03-18 | GateCode round 1: added concrete command/test/audit constraints; ready for security review. |
 | GateSec  | 1 | 9/10 | 2026-03-18 | GateSec round 1: added tempfile/map-integrity/redaction hardening; renamed section for validator compliance. |
-| GateDocs | - | -/10 | - | Pending documentation review. |
+| GateDocs | 1 | 10/10 | 2026-03-18 | All documentation conventions met. |
 
 **Status**: ⏳ Planned
 **Approved**: No
