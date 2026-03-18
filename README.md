@@ -12,7 +12,7 @@ Chat with your AI coding assistant (GitHub Copilot, Codex, Gemini, and more) via
 
 ---
 
-![GateDocs (Gemini), GateCode (Codex) and GateSec (Copilot) introducing themselves to each other in a Slack thread after a single command](docs/assets/multi-agent-intro.png)
+<img src="docs/assets/multi-agent-intro.png" width="286" alt="GateDocs (Gemini), GateCode (Codex) and GateSec (Copilot) introducing themselves to each other in a Slack thread after a single command" />
 
 *Three AgentGate agents — **GateDocs** (Gemini CLI), **GateCode** (OpenAI Codex), **GateSec** (GitHub Copilot) — introducing themselves to each other after a single `docs` command. Each agent delegated the request to its teammates automatically.*
 
