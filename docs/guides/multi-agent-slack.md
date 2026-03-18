@@ -2,19 +2,19 @@
 
 This guide shows how to run multiple AgentGate instances as specialised AI agents in a single Slack workspace. We use the AgentGate project itself as the working example.
 
-See also: docs/features/slack-final-response-new-message.md, docs/features/slack-agent-delegation.md, docs/features/slack-thread-replies.md
-
-Note: SLACK_DELETE_THINKING and SLACK_THREAD_REPLIES are documented in README and .env.example. Delegation sentinel format and guardrails are described in docs/features/slack-agent-delegation.md.
+See also: [`docs/guides/slack-setup.md`](slack-setup.md) for single-agent setup. `SLACK_DELETE_THINKING` and `SLACK_THREAD_REPLIES` are documented in README and `.env.example`.
 
 ## What you'll set up
 
 Three agents, one `#agentgate` Slack channel:
 
-| Agent | Trigger prefix | Backend | Model |
-|-------|---------------|---------|-------|
-| `@GateCode` — Developer | `dev` | Copilot | `claude-sonnet-4.6` |
-| `@GateSec` — Security | `sec` | Copilot | `claude-opus-4.6` |
-| `@GateDocs` — Docs writer | `docs` | Copilot | `gpt-5-mini` |
+| Agent | Trigger prefix | Backend | Model | Extra files |
+|-------|---------------|---------|-------|-------------|
+| `@GateCode` — Developer | `dev` | Codex | `gpt-5.3-codex` | none (auth managed automatically) |
+| `@GateSec` — Security | `sec` | Copilot | `claude-opus-4.6` | `skills/sec-agent.md` via `COPILOT_SKILLS_DIRS` |
+| `@GateDocs` — Docs writer | `docs` | Gemini | `gemini-2.5-flash` | `.gemini/GEMINI.md` context file |
+
+You can mix and match backends freely — all three can use the same backend, or each can be different.
 
 **Prerequisites**: A Slack workspace where you can install apps, Docker, and the credentials for at least one AI backend.
 
@@ -137,7 +137,111 @@ GateSec AI responds (new message):
 
 ---
 
-## Step 1 — Create Skills Files
+## Step 1 — Backend-specific setup
+
+Each backend has different credentials, optional persona/context files, and runtime behaviour. Pick the backend for each agent and follow the relevant subsection.
+
+---
+
+### Copilot backend (`AI_CLI=copilot`)
+
+**Required env vars:**
+```bash
+AI_CLI=copilot
+AI_MODEL=claude-opus-4.6        # or any model from GitHub Copilot's roster
+COPILOT_GITHUB_TOKEN=ghp_...    # GitHub PAT with Copilot access
+COPILOT_SKILLS_DIRS=/repo/skills
+```
+
+**Skills / persona files** (optional but recommended):
+
+Skills files live in `skills/` inside the cloned repo. The container automatically has them at `/repo/skills/` — no host copy or volume mount needed.
+
+```
+skills/dev-agent.md   ← Developer persona
+skills/sec-agent.md   ← Security engineer persona
+skills/docs-agent.md  ← Technical writer persona
+```
+
+Set `COPILOT_SKILLS_DIRS=/repo/skills` in the agent's `.env`. Multiple directories are colon-separated. The skills files are loaded by the Copilot CLI at subprocess spawn time; you can update them with `<prefix> sync` (git pull) and restart without rebuilding.
+
+**Notes:**
+- `COPILOT_GITHUB_TOKEN` must be a GitHub Personal Access Token with an active Copilot subscription.
+- Copilot is **stateless** — each query spawns a fresh subprocess. History is injected by the bot layer via `HISTORY_TURNS` (default 10 turns).
+- `AI_MODEL` selects the model; see the [GitHub Copilot model comparison](https://docs.github.com/en/copilot/reference/ai-models/model-comparison) for the full list.
+
+---
+
+### Codex backend (`AI_CLI=codex`)
+
+**Required env vars:**
+```bash
+AI_CLI=codex
+AI_MODEL=gpt-5.3-codex           # or other Codex-compatible model
+OPENAI_API_KEY=sk-proj-...        # OpenAI API key with Codex access
+```
+
+**No separate skills files** — Codex is configured entirely via env vars and the system prompt. To inject a persona, use `SYSTEM_PROMPT` or `SYSTEM_PROMPT_FILE`.
+
+**Auth mechanism:**
+
+Codex writes credentials to `/data/.codex/auth.json` (inside the container, where `HOME=/data`). AgentGate re-runs `codex login --with-api-key` before every invocation to ensure this file stays correct. No manual action is needed, but note:
+
+- The `/data` volume must be writable. In `docker-compose.yml`, bind-mount `./data/<agent>:/data` (per-agent folder, not shared).
+- If you see `Reconnecting... 1/5 (unexpected status 401)` errors in logs, the API key is wrong or the volume has stale auth from a previous run. Run `docker compose down && docker volume rm <vol>` and restart.
+
+**Sandbox mode:**
+
+Codex runs shell commands as part of its agentic workflow. The sandbox level is controlled by `CODEX_SANDBOX`:
+```bash
+CODEX_SANDBOX=workspace-write   # default — only /repo, /tmp, /data are writable
+CODEX_SANDBOX=danger-full-access   # unrestricted — use only in trusted environments
+```
+
+**Notes:**
+- Codex is **stateful** — it maintains its own conversation context across calls. `HISTORY_TURNS` is ignored for Codex.
+- Responses can be long (full shell output, file diffs). Use `SLACK_MAX_CHARS` to truncate if needed.
+- A 300-second timeout per call is enforced. Long agentic tasks may hit this; use `dev cancel` to abort.
+
+---
+
+### Gemini backend (`AI_CLI=gemini`)
+
+**Required env vars:**
+```bash
+AI_CLI=gemini
+AI_MODEL=gemini-2.5-flash        # or gemini-2.5-pro, etc.
+GEMINI_API_KEY=AIza...            # from https://aistudio.google.com/app/apikey
+```
+
+**Context file (`.gemini/GEMINI.md`):**
+
+Gemini CLI automatically loads a `GEMINI.md` file from the working directory if present. In AgentGate's Docker setup, `HOME=/data`, so Gemini looks for `/data/.gemini/GEMINI.md`. This file acts as a persistent, always-on persona/context that Gemini reads on every invocation — without any tool activation or API call.
+
+To provide an agent-specific persona for a Gemini-powered agent:
+
+1. Create a context file for the agent, e.g. `gemini-context/docs-agent.md` alongside your `docker-compose.yml`.
+2. Copy it into the data volume before starting the container:
+   ```bash
+   mkdir -p ./data/docs/.gemini
+   cp ./gemini-context/docs-agent.md ./data/docs/.gemini/GEMINI.md
+   ```
+3. Add this copy step to your `rebuild-all.sh` (or equivalent) so it runs on every fresh deployment.
+
+The repo contains a ready-made example at `.gemini/docs-agent.md` which you can use as a starting point.
+
+> **Important:** `GEMINI.md` is gitignored in AgentGate's repo root (it's auto-generated by Gemini CLI as a workspace summary). Your custom agent context files (`gemini-context/*.md`) should live in a separate directory and be committed to your repo.
+
+**Notes:**
+- Gemini is **stateless** — history is injected by the bot layer via `HISTORY_TURNS`.
+- `GEMINI_API_KEY` is validated at startup; missing it causes an immediate fatal error.
+- The CLI always runs with `--non-interactive` (headless) and `--yolo` (auto-approves tool calls). Do not use Gemini in an environment where unrestricted tool execution is unacceptable.
+- `AI_CLI_OPTS` can pass additional flags, but `--non-interactive` and `--yolo` cannot be removed.
+- Free-tier quota: Gemini 2.5 Flash — 1,500 req/day, 1 million tokens/min. [Check current limits.](https://ai.google.dev/pricing)
+
+---
+
+## Step 2 — Create Skills Files
 
 Clone or copy the ready-made skills files from `skills/` in this repository:
 
@@ -156,11 +260,11 @@ You can customise these files to fit your team. For inspiration, see:
 
 ---
 
-## Step 2 — Create Slack Apps (repeat for each agent)
+## Step 3 — Create Slack Apps (repeat for each agent)
 
 The fastest way is to use an **app manifest** — one paste creates the app with all scopes and events pre-configured.
 
-### 2a — Create the app from a manifest
+### 3a — Create the app from a manifest
 
 1. Go to [https://api.slack.com/apps](https://api.slack.com/apps) → **Create New App** → **From an app manifest**
 2. Select your workspace → paste the manifest for each agent below → **Next** → **Create**
@@ -255,7 +359,7 @@ The fastest way is to use an **app manifest** — one paste creates the app with
 }
 ```
 
-### 2b — After creating each app
+### 3b — After creating each app
 
 1. **Settings → Basic Information** → scroll to **App-Level Tokens** → **Generate Token and Scopes** → name it anything → scope: `connections:write` → **Generate** → copy the token (`xapp-...`)
 2. **Install App** → **Install to workspace** → **Allow** → copy the Bot User OAuth Token (`xoxb-...`)
@@ -268,7 +372,7 @@ Repeat for all three apps.
 
 ---
 
-## Step 3 — Add Bots to the Channel
+## Step 4 — Add Bots to the Channel
 
 Each bot must be explicitly added to the Slack channel before it can receive messages there.
 
@@ -281,10 +385,10 @@ All three bots should now appear in the channel's integrations list.
 
 ---
 
-## Step 4 — Create `.env` Files
+## Step 5 — Create `.env` Files
 
 ```bash
-# .env.dev
+# .env.dev  — Codex backend (agentic, stateful)
 PLATFORM=slack
 SLACK_BOT_TOKEN=xoxb-dev-...
 SLACK_APP_TOKEN=xapp-dev-...
@@ -293,15 +397,16 @@ BOT_CMD_PREFIX=dev
 PREFIX_ONLY=true
 GITHUB_REPO=agigante80/AgentGate
 GITHUB_REPO_TOKEN=ghp_...
-AI_CLI=copilot
-AI_MODEL=claude-sonnet-4.6
-COPILOT_GITHUB_TOKEN=ghp_...
-COPILOT_SKILLS_DIRS=/repo/skills
-TRUSTED_AGENT_BOT_IDS=["GateSec:sec","GateDocs:docs"]   # name:prefix of each teammate
+BRANCH=develop
+AI_CLI=codex
+AI_MODEL=gpt-5.3-codex
+OPENAI_API_KEY=sk-proj-...
+TRUSTED_AGENT_BOT_IDS=["GateSec:sec","GateDocs:docs"]
+SLACK_THREAD_REPLIES=true
 ```
 
 ```bash
-# .env.sec
+# .env.sec  — Copilot backend (stateless, skills-file persona)
 PLATFORM=slack
 SLACK_BOT_TOKEN=xoxb-sec-...
 SLACK_APP_TOKEN=xapp-sec-...
@@ -310,15 +415,17 @@ BOT_CMD_PREFIX=sec
 PREFIX_ONLY=true
 GITHUB_REPO=agigante80/AgentGate
 GITHUB_REPO_TOKEN=ghp_...
+BRANCH=develop
 AI_CLI=copilot
 AI_MODEL=claude-opus-4.6
 COPILOT_GITHUB_TOKEN=ghp_...
 COPILOT_SKILLS_DIRS=/repo/skills
-TRUSTED_AGENT_BOT_IDS=["GateCode:dev","GateDocs:docs"]   # name:prefix of each teammate
+TRUSTED_AGENT_BOT_IDS=["GateCode:dev","GateDocs:docs"]
+SLACK_THREAD_REPLIES=true
 ```
 
 ```bash
-# .env.docs
+# .env.docs  — Gemini backend (stateless, GEMINI.md persona)
 PLATFORM=slack
 SLACK_BOT_TOKEN=xoxb-docs-...
 SLACK_APP_TOKEN=xapp-docs-...
@@ -327,24 +434,25 @@ BOT_CMD_PREFIX=docs
 PREFIX_ONLY=true
 GITHUB_REPO=agigante80/AgentGate
 GITHUB_REPO_TOKEN=ghp_...
-AI_CLI=copilot
-AI_MODEL=gpt-5-mini
-COPILOT_GITHUB_TOKEN=ghp_...
-COPILOT_SKILLS_DIRS=/repo/skills
-TRUSTED_AGENT_BOT_IDS=["GateCode:dev","GateSec:sec"]    # name:prefix of each teammate
+BRANCH=develop
+AI_CLI=gemini
+AI_MODEL=gemini-2.5-flash
+GEMINI_API_KEY=AIza...
+TRUSTED_AGENT_BOT_IDS=["GateCode:dev","GateSec:sec"]
+SLACK_THREAD_REPLIES=true
 ```
 
-> **Note**: All agents use `AI_CLI=copilot`. `COPILOT_GITHUB_TOKEN` is required — use a GitHub Personal Access Token with Copilot access. `AI_MODEL` selects the model per agent; see [GitHub Copilot model comparison](https://docs.github.com/en/copilot/reference/ai-models/model-comparison) for the full list of available models.
+> **Note**: `COPILOT_SKILLS_DIRS=/repo/skills` points to the `skills/` directory inside the cloned repo — no host copy or volume mount needed.
 >
-> **Note**: `COPILOT_SKILLS_DIRS=/repo/skills` points to the `skills/` directory inside the cloned repo (`/repo` is where the container clones `GITHUB_REPO` at startup). No host copy or volume mount needed — the skills are already there.
+> **Note**: For the Gemini agent, copy the context file before starting: `mkdir -p ./data/docs/.gemini && cp ./gemini-context/docs-agent.md ./data/docs/.gemini/GEMINI.md` (see [Step 1 — Gemini backend](#gemini-backend-ai_cligemini) for details).
 >
-> **Note**: `TRUSTED_AGENT_BOT_IDS` accepts entries in `"DisplayName:prefix"` format (e.g. `"GateSec:sec"`) or bare `B`-prefixed bot IDs. Names are resolved automatically at startup — no manual ID lookup needed. The `:prefix` suffix enables auto-generated team context so each agent knows how to address its teammates.
+> **Note**: `TRUSTED_AGENT_BOT_IDS` accepts `"DisplayName:prefix"` entries. Names are resolved to Slack bot IDs automatically at startup. The `:prefix` suffix enables auto-generated team context so each agent knows how to address teammates.
 >
-> **Note**: `SLACK_CHANNEL_ID` is required — without it the bot cannot post its 🟢 Ready message on startup. To find the Channel ID: click the channel name at the top of the channel → **Channel details** opens → the ID is shown at the bottom of the panel (starts with `C`). See [`docs/guides/slack-setup.md`](slack-setup.md) for the full single-agent setup guide.
+> **Note**: `SLACK_CHANNEL_ID` is required — without it the bot cannot post its 🟢 Ready message. Find it by clicking the channel name → **Channel details** → ID at the bottom (starts with `C`). See [`docs/guides/slack-setup.md`](slack-setup.md) for the full single-agent setup guide.
 
 ---
 
-## Step 5 — Docker Compose
+## Step 6 — Docker Compose
 
 ```yaml
 # docker-compose.multi-agent.yml
@@ -393,7 +501,7 @@ Skills files (`skills/`) live inside the cloned repo at `/repo/skills/` — no h
 
 ---
 
-## Step 6 — Launch and Verify
+## Step 7 — Launch and Verify
 
 ```bash
 # Launch all three agents
@@ -460,9 +568,92 @@ All conversation stays in a single thread. The channel root only shows your orig
 
 ---
 
+## Switching AI backends safely
+
+Switching a running agent's backend (e.g. from Copilot to Gemini) is straightforward but easy to get wrong if done directly on a remote machine. The recommended workflow is **local-first**:
+
+### Why local-first?
+
+- Different backends have different file requirements that must exist *before* the container starts (e.g. Gemini's `GEMINI.md`, Codex's `auth.json`).
+- A backend that fails to start silently drops from the Slack channel — no warning, no Ready message.
+- Testing locally gives you fast feedback and doesn't interrupt your live workspace.
+
+### Local-first workflow
+
+**1. Test the new backend locally first**
+
+In your local docker directory (e.g. `/home/you/docker/myagentgate/`):
+
+```bash
+# Change the AI_CLI and credentials in the agent's .env
+nano .env.docs
+# AI_CLI=gemini
+# AI_MODEL=gemini-2.5-flash
+# GEMINI_API_KEY=AIza...
+
+# Create any required files for the backend
+mkdir -p ./data/docs/.gemini
+cp ./gemini-context/docs-agent.md ./data/docs/.gemini/GEMINI.md
+
+# Rebuild and restart only the affected agent
+docker compose build --no-cache docs
+docker compose up -d docs
+
+# Watch the logs until you see 🟢 Ready
+docker compose logs -f docs
+```
+
+Send a test message (`docs hi`) and confirm it responds correctly.
+
+**2. Create the backend-specific files (if not already in your repo)**
+
+| Backend | Files to create | Where |
+|---------|----------------|-------|
+| Copilot | `skills/<agent>-agent.md` | In the repo at `skills/`, auto-available at `/repo/skills/` |
+| Codex | none | `auth.json` is managed automatically |
+| Gemini | `gemini-context/<agent>-agent.md` | Alongside `docker-compose.yml`; copy to `./data/<agent>/.gemini/GEMINI.md` at deploy |
+
+**3. Commit and push to your deployment branch**
+
+```bash
+git add gemini-context/docs-agent.md skills/docs-agent.md
+git commit -m "feat: switch docs agent to Gemini backend"
+git push origin develop
+```
+
+**4. Switch the remote deployment**
+
+On the remote machine:
+
+```bash
+cd /your/docker/dir
+git pull origin develop
+
+# Create backend-specific files if the backend needs them
+mkdir -p ./data/docs/.gemini
+cp ./gemini-context/docs-agent.md ./data/docs/.gemini/GEMINI.md
+
+# Update the .env file
+nano .env.docs  # change AI_CLI, add new credentials
+
+# Rebuild only the affected agent (no --no-cache needed if image is up to date)
+docker compose up -d --build docs
+
+# Confirm it started
+docker compose logs -f docs
+```
+
+> **Tip:** Add the file-copy step to your `rebuild-all.sh` so it runs automatically on every full redeploy and no manual step is forgotten.
+
+---
+
 ## Customising agent personas
 
-Edit the skills files in `skills/` to change each agent's behaviour. The format follows the [agency-agents](https://github.com/msitarzewski/agency-agents) structure:
+Each backend has its own mechanism for injecting a persona. Choose the one that matches your backend:
+
+**Copilot — skills files** (`COPILOT_SKILLS_DIRS`):
+
+Edit `skills/` files in the repo. The format follows the [agency-agents](https://github.com/msitarzewski/agency-agents) structure:
 
 ```markdown
 ---
@@ -483,4 +674,24 @@ Non-negotiable constraints.
 Step-by-step process for typical tasks.
 ```
 
-For the Copilot backend, skills are loaded from `COPILOT_SKILLS_DIRS` at subprocess spawn time. Since they live in the cloned repo at `/repo/skills/`, you can update them with a `dev sync` (git pull) without rebuilding — just restart the container after syncing.
+Skills are loaded from `COPILOT_SKILLS_DIRS` at subprocess spawn time. Since they live in the cloned repo at `/repo/skills/`, you can update them with `<prefix> sync` (git pull) without rebuilding — just restart the container after syncing.
+
+**Gemini — `.gemini/GEMINI.md` context file:**
+
+Create a markdown file with the agent's persona and copy it to `./data/<agent>/.gemini/GEMINI.md` before starting the container (see [Step 1 — Gemini backend](#gemini-backend-ai_cligemini)). The Gemini CLI loads this file on every invocation automatically. Update it by editing the source file and re-running the copy step.
+
+**Codex — `SYSTEM_PROMPT` / `SYSTEM_PROMPT_FILE`:**
+
+Use the `SYSTEM_PROMPT` env var for inline text or `SYSTEM_PROMPT_FILE` for a path to a markdown file. The file must not be inside `/repo`.
+
+```bash
+# Inline
+SYSTEM_PROMPT=You are GateCode, a senior developer specialising in Python and security.
+
+# Or file-based (mount a separate volume)
+SYSTEM_PROMPT_FILE=/config/dev-persona.md
+```
+
+**All backends — auto-generated team context:**
+
+Regardless of backend, AgentGate automatically prepends a team context block to every prompt (derived from `BOT_CMD_PREFIX`, `TRUSTED_AGENT_BOT_IDS`, `GITHUB_REPO`, and `BRANCH`). No extra config is needed for this.

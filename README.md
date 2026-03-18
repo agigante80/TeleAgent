@@ -2,9 +2,19 @@
 
 **Your AI CLI, anywhere.**
 
-Chat with your AI coding assistant (GitHub Copilot, Codex, OpenAI, Anthropic) via Telegram or Slack — one Docker container per project, zero context switching.
+Chat with your AI coding assistant (GitHub Copilot, Codex, Gemini, and more) via Telegram or Slack — one Docker container per project, zero context switching. Run multiple specialised agents in the same Slack workspace and let them collaborate with each other — see the [multi-agent setup guide](docs/guides/multi-agent-slack.md).
 
-> ✅ Works with **Telegram** | ✅ Works with **Slack** | ✅ Tested on **Synology NAS** | ✅ Tested with **GitHub Copilot**
+> ✅ Works with **Telegram** | ✅ Works with **Slack** | ✅ Tested on **Synology NAS**
+>
+> **Tested AI backends:** ✅ GitHub Copilot CLI · ✅ OpenAI Codex CLI · ✅ Google Gemini CLI
+>
+> **Not yet fully field-tested:** ⚠️ Direct API (OpenAI · Anthropic · Ollama) — implemented and unit-tested, but not validated end-to-end in production. Feedback and bug reports are very welcome!
+
+---
+
+<img src="docs/assets/multi-agent-intro.png" width="286" alt="GateDocs (Gemini), GateCode (Codex) and GateSec (Copilot) introducing themselves to each other in a Slack thread after a single command" />
+
+*Three AgentGate agents — **GateDocs** (Gemini CLI), **GateCode** (OpenAI Codex), **GateSec** (GitHub Copilot) — introducing themselves to each other after a single `docs` command. Each agent delegated the request to its teammates automatically.*
 
 ---
 
@@ -66,14 +76,19 @@ docker compose up -d
 
 ### Pre-built image tags
 
-| Branch/event | Image tag |
-|---|---|
-| Push to `develop` | `ghcr.io/agigante80/agentgate:develop` + `:development` |
-| Push to `main` | `ghcr.io/agigante80/agentgate:latest` + `:main` |
-| Version release | `ghcr.io/agigante80/agentgate:X.Y.Z` |
+| Branch/event | GHCR | Docker Hub |
+|---|---|---|
+| Push to `develop` | `ghcr.io/agigante80/agentgate:develop` | `agigante80/agentgate:develop` |
+| Push to `main` | `ghcr.io/agigante80/agentgate:latest` | `agigante80/agentgate:latest` |
+| Version release | `ghcr.io/agigante80/agentgate:X.Y.Z` | `agigante80/agentgate:X.Y.Z` |
 
 ```bash
-docker pull ghcr.io/agigante80/agentgate:latest   # stable
+# Docker Hub (stable)
+docker pull agigante80/agentgate:latest
+docker pull agigante80/agentgate:develop   # latest dev build
+
+# GHCR mirror
+docker pull ghcr.io/agigante80/agentgate:latest
 docker pull ghcr.io/agigante80/agentgate:develop   # latest dev build
 ```
 
@@ -110,16 +125,6 @@ AgentGate utility commands use a configurable prefix (`BOT_CMD_PREFIX`, default 
 | `/gate help` | Full command reference + version |
 
 Destructive shell commands (`push`, `merge`, `rm`, `force`) require inline confirmation.
-
-### Feature Tracking Workflow
-
-- Feature planning and prioritization now lives in GitHub issues (`type:feature` + `status:*` + `priority:*` labels).
-- `docs/roadmap.md` and migrated legacy feature specs were removed after verified parity.
-- `docs align-sync` is unchanged and remains responsible for README/config/env synchronization.
-- Migration utilities remain available for auditability:
-  - `python scripts/migrate_features.py --verify`
-  - `python scripts/sync_github_issues.py --dry-run --create-missing --update-existing`
-  - `python scripts/cleanup_feature_tracking_docs.py` (manifest generation/validation)
 
 ---
 
@@ -260,6 +265,8 @@ environment:
 ## Slack Setup
 
 > Full step-by-step guide: **[docs/guides/slack-setup.md](docs/guides/slack-setup.md)**
+>
+> Running multiple AI agents in one Slack workspace? See **[docs/guides/multi-agent-slack.md](docs/guides/multi-agent-slack.md)**
 
 Quick summary:
 
@@ -297,6 +304,22 @@ Run them side by side — fully isolated, separate Telegram bots.
 
 ---
 
+## Multi-agent Slack
+
+You can run several AgentGate containers in the same Slack workspace, each with a different AI backend and a unique prefix — for example:
+
+| Agent | Prefix | Backend | Role |
+|-------|--------|---------|------|
+| GateCode | `dev` | Codex CLI | Code + commits |
+| GateSec | `sec` | Copilot CLI | Security review |
+| GateDocs | `docs` | Gemini CLI | Documentation |
+
+Users address each agent with its prefix (`dev <message>`, `sec <message>`, `docs <message>`). Agents can also delegate to each other via `TRUSTED_AGENT_BOT_IDS`.
+
+> 📖 Full setup guide, `.env` examples, backend-specific file requirements, and advice on switching backends safely: **[docs/guides/multi-agent-slack.md](docs/guides/multi-agent-slack.md)**
+
+---
+
 ## Persistent Repo (no re-cloning on restart)
 
 Set `REPO_HOST_PATH` in `.env` to a directory on your machine:
@@ -311,7 +334,7 @@ Docker bind-mounts it to `/repo`. The bot clones once, reuses forever.
 
 ## AI Backends
 
-### GitHub Copilot CLI (default)
+### GitHub Copilot CLI (default) ✅ Tested
 
 Requires a **fine-grained PAT** with the *Copilot Requests* permission. Classic `ghp_` tokens are **not** supported.
 
@@ -320,7 +343,7 @@ AI_CLI=copilot
 COPILOT_GITHUB_TOKEN=github_pat_...
 ```
 
-### OpenAI Codex CLI
+### OpenAI Codex CLI ✅ Tested
 
 ```env
 AI_CLI=codex
@@ -328,7 +351,9 @@ OPENAI_API_KEY=sk-...
 AI_MODEL=o3
 ```
 
-### Direct API — OpenAI / Anthropic / Ollama
+### Direct API — OpenAI / Anthropic / Ollama ⚠️ Not fully field-tested
+
+> This backend is implemented and unit-tested but has not been validated end-to-end in a live production deployment. If you try it, please [open an issue](https://github.com/agigante80/AgentGate/issues) with your findings — improvements and fixes are very welcome!
 
 ```env
 AI_CLI=api
@@ -351,7 +376,7 @@ AI_MODEL=llama3.2
 AI_BASE_URL=http://host.docker.internal:11434
 ```
 
-### Google Gemini CLI
+### Google Gemini CLI ✅ Tested
 
 Requires an API key from [Google AI Studio](https://aistudio.google.com/app/apikey).
 

@@ -41,9 +41,9 @@ Ask yourself these questions in order:
 | Change | Version |
 |--------|---------|
 | Fix ruff lint error | `PATCH` |
-| Add `/tahelp` shows version number | `PATCH` |
+| Add `gate help` shows version number | `PATCH` |
 | Add new AI backend (e.g. Gemini) | `MINOR` |
-| New Telegram command `/tadiag` | `MINOR` |
+| New bot command `gate diag` | `MINOR` |
 | Rename `TG_BOT_TOKEN` env var | `MAJOR` |
 | Drop support for `linux/amd64` Docker platform | `MAJOR` |
 | Rewrite PTY session management | `MINOR` (if no API change) |
