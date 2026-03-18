@@ -442,7 +442,7 @@ jobs:
           git push origin refs/tags/develop-latest
 
       - name: 🚀 Create GitHub Pre-Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v1
         with:
           tag_name: develop-latest
           name: "develop-latest — v${{ needs.version.outputs.version }}"
@@ -520,7 +520,7 @@ jobs:
           echo "EOF" >> $GITHUB_OUTPUT
 
       - name: 🎉 Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v1
         with:
           tag_name: v${{ needs.version.outputs.version }}
           name: Release v${{ needs.version.outputs.version }}
