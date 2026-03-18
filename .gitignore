@@ -36,3 +36,6 @@ Thumbs.db
 
 # Local migration artifacts
 tmp/
+
+# Gemini CLI workspace context file (auto-generated, local only)
+GEMINI.md
