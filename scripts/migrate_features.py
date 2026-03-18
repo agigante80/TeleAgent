@@ -237,18 +237,28 @@ def verify_parity_report(features_dir: Path, output_dir: Path) -> list[str]:
     reported_outputs: set[Path] = set()
     errors: list[str] = []
 
-    if report.get("schema_version") != 2:
+    schema_version = report.get("schema_version")
+    source_count = report.get("source_count")
+    export_count = report.get("export_count")
+
+    if not isinstance(schema_version, int):
+        errors.append("invalid parity report: `schema_version` must be an integer")
+    elif schema_version != 2:
         errors.append(
-            f"unexpected schema_version: expected 2, got {report.get('schema_version')!r}"
+            f"unexpected schema_version: expected 2, got {schema_version!r}"
         )
-    if report.get("source_count") != len(expected_sources):
+    if not isinstance(source_count, int):
+        errors.append("invalid parity report: `source_count` must be an integer")
+    elif source_count != len(expected_sources):
         errors.append(
             "source_count mismatch: "
-            f"expected {len(expected_sources)}, got {report.get('source_count')!r}"
+            f"expected {len(expected_sources)}, got {source_count!r}"
         )
-    if report.get("export_count") != len(items):
+    if not isinstance(export_count, int):
+        errors.append("invalid parity report: `export_count` must be an integer")
+    elif export_count != len(items):
         errors.append(
-            f"export_count mismatch: expected {len(items)}, got {report.get('export_count')!r}"
+            f"export_count mismatch: expected {len(items)}, got {export_count!r}"
         )
 
     for index, item in enumerate(items):
@@ -260,8 +270,24 @@ def verify_parity_report(features_dir: Path, output_dir: Path) -> list[str]:
         output_raw = item.get("output")
         source_hash = item.get("source_sha256")
         output_hash = item.get("output_sha256")
+        title = item.get("title")
+        slug = item.get("slug")
+        status = item.get("status")
+        priority = item.get("priority")
+        labels = item.get("labels")
         if not all(isinstance(value, str) for value in (source_raw, output_raw, source_hash, output_hash)):
             errors.append(f"item {index}: missing required string fields")
+            continue
+        metadata_valid = (
+            isinstance(title, str)
+            and isinstance(slug, str)
+            and isinstance(status, str)
+            and isinstance(priority, str)
+            and isinstance(labels, list)
+            and all(isinstance(label, str) for label in labels)
+        )
+        if not metadata_valid:
+            errors.append(f"item {index}: malformed metadata fields")
             continue
         source_hash_valid = bool(SHA256_HEX_RE.fullmatch(source_hash))
         output_hash_valid = bool(SHA256_HEX_RE.fullmatch(output_hash))
@@ -314,23 +340,22 @@ def verify_parity_report(features_dir: Path, output_dir: Path) -> list[str]:
                 errors.append(
                     f"item {index}: source path mismatch for {source.as_posix()}"
                 )
-            if item.get("title") != parsed_doc.title:
+            if title != parsed_doc.title:
                 errors.append(
                     f"item {index}: title mismatch for {source.as_posix()}"
                 )
-            if item.get("slug") != parsed_doc.slug:
+            if slug != parsed_doc.slug:
                 errors.append(
                     f"item {index}: slug mismatch for {source.as_posix()}"
                 )
-            if item.get("status") != parsed_doc.status:
+            if status != parsed_doc.status:
                 errors.append(
                     f"item {index}: status mismatch for {source.as_posix()}"
                 )
-            if item.get("priority") != parsed_doc.priority:
+            if priority != parsed_doc.priority:
                 errors.append(
                     f"item {index}: priority mismatch for {source.as_posix()}"
                 )
-            labels = item.get("labels")
             if labels != parsed_doc.labels:
                 errors.append(
                     f"item {index}: labels mismatch for {source.as_posix()}"

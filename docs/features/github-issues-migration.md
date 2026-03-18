@@ -283,6 +283,8 @@ Once all features are successfully migrated and verified on GitHub:
 | `test_verify_parity_report_rejects_malformed_hash_fields` | `verify_parity_report()` rejects parity items whose `source_sha256`/`output_sha256` values are not canonical 64-char lowercase hex digests. |
 | `test_verify_parity_report_rejects_malformed_json` | `verify_parity_report()` returns a validation error (not a traceback) when `parity-report.json` is malformed JSON. |
 | `test_verify_parity_report_rejects_non_object_top_level` | `verify_parity_report()` rejects reports whose top-level JSON is not an object. |
+| `test_verify_parity_report_rejects_malformed_header_field_types` | `verify_parity_report()` rejects reports with non-integer `schema_version`, `source_count`, or `export_count` fields. |
+| `test_verify_parity_report_rejects_malformed_metadata_fields` | `verify_parity_report()` rejects parity items with non-string metadata fields (`title`/`slug`/`status`/`priority`) or non-string label entries. |
 
 ### Manual Verification of Migration
 
@@ -295,6 +297,7 @@ Once all features are successfully migrated and verified on GitHub:
 -   `--verify` rejects path-boundary escapes in parity entries (`source` must stay under `docs/features/`; `output` must stay under `tmp/feature-issue-export/`).
 -   `--verify` rejects duplicate parity items and malformed hash fields so each source/output pair is unique and hash encodings are canonical.
 -   `--verify` fails gracefully with explicit errors when `parity-report.json` is malformed or has an invalid top-level shape.
+-   `--verify` enforces strict schema typing: top-level `schema_version`/`source_count`/`export_count` must be integers, and item metadata fields must use canonical string/list-of-string types.
 
 ### End-to-End Review Process Simulation
 
