@@ -1,6 +1,6 @@
 # Post-Migration Cleanup for Feature Tracking Docs
 
-> Status: **Planned** | Priority: Medium | Last reviewed: 2026-03-18
+> Status: **Implemented** | Priority: Medium | Last reviewed: 2026-03-18
 
 Follow-up feature for retiring legacy docs-based tracking only after issue parity is verified.
 
@@ -12,8 +12,8 @@ Follow-up feature for retiring legacy docs-based tracking only after issue parit
 | GateSec  | 1 | 9/10 | 2026-03-18 | GateSec round 1: added path-boundary enforcement, integrity chain, manifest validation, security considerations section, and expanded test/acceptance criteria. |
 | GateDocs | 1 | 10/10 | 2026-03-18 | Docs review round 1: comprehensive and clear, adheres to all conventions. |
 
-**Status**: ⏳ Planned
-**Approved**: No
+**Status**: ✅ Approved — round 1, all scores ≥ 9
+**Approved**: Yes — ready to implement
 
 ## Problem Statement
 
@@ -90,13 +90,13 @@ Follow-up feature for retiring legacy docs-based tracking only after issue parit
 
 ## Acceptance Criteria
 
-- [ ] Cleanup PR references successful parity verification output from the same commit lineage.
-- [ ] `tmp/feature-issue-export/cleanup-manifest.json` is present and matches deleted files exactly.
-- [ ] Manifest includes `parity_report_sha256` that matches the on-disk report.
-- [ ] `docs/roadmap.md` is removed.
-- [ ] Removed feature docs each have matching GitHub issue references in the manifest.
-- [ ] No manifest entry resolves outside `docs/features/` (except `docs/roadmap.md`).
-- [ ] Deletion is file-by-file from the manifest — no glob or directory removal.
-- [ ] README/docs instructions are updated to the final issue-centric workflow.
-- [ ] Rollback instructions are present and tested by reviewer via dry-run command inspection.
-- [ ] `_template.md`, this doc, and the phase-2 automation doc are confirmed not deleted.
+- [x] Cleanup PR references successful parity verification output from the same commit lineage.
+- [x] `tmp/feature-issue-export/cleanup-manifest.json` is present and matches deleted files exactly.
+- [x] Manifest includes `parity_report_sha256` that matches the on-disk report.
+- [x] `docs/roadmap.md` is removed.
+- [x] Removed feature docs each have matching GitHub issue references in the manifest.
+- [x] No manifest entry resolves outside `docs/features/` (except `docs/roadmap.md`).
+- [x] Deletion is file-by-file from the manifest — no glob or directory removal.
+- [x] README/docs instructions are updated to the final issue-centric workflow.
+- [x] Rollback instructions are present and tested by reviewer via dry-run command inspection.
+- [x] `_template.md`, this doc, and the phase-2 automation doc are confirmed not deleted.

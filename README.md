@@ -111,12 +111,15 @@ AgentGate utility commands use a configurable prefix (`BOT_CMD_PREFIX`, default 
 
 Destructive shell commands (`push`, `merge`, `rm`, `force`) require inline confirmation.
 
-### Feature Tracking Migration (Phase 1)
+### Feature Tracking Workflow
 
-- Feature planning is migrating from `docs/features/*.md` + `docs/roadmap.md` to GitHub issues.
-- `docs roadmap-sync` is superseded for feature tracking and will be retired after parity verification.
+- Feature planning and prioritization now lives in GitHub issues (`type:feature` + `status:*` + `priority:*` labels).
+- `docs/roadmap.md` and migrated legacy feature specs were removed after verified parity.
 - `docs align-sync` is unchanged and remains responsible for README/config/env synchronization.
-- Use `python scripts/migrate_features.py` to export issue-ready markdown into `tmp/feature-issue-export/` and review `tmp/feature-issue-export/parity-report.json` before posting issues.
+- Migration utilities remain available for auditability:
+  - `python scripts/migrate_features.py --verify`
+  - `python scripts/sync_github_issues.py --dry-run --create-missing --update-existing`
+  - `python scripts/cleanup_feature_tracking_docs.py` (manifest generation/validation)
 
 ---
 
@@ -389,7 +392,7 @@ The `AI_API_KEY` master-fallback and `CODEX_API_KEY` alias were removed. Each ba
 ```
 WARNING: AI_API_KEY is deprecated and will be removed in v1.1.0.
 Set OPENAI_API_KEY, ANTHROPIC_API_KEY, or the backend-specific key instead.
-See docs/features/api-key-scheme.md for the migration guide.
+See GitHub issue #24 (`AI Provider Explicit Validation`) for migration context.
 ```
 
 Update your `.env` or `docker-compose.yml` before upgrading to v1.1.0.

@@ -3,10 +3,8 @@
 
 Checks:
   1. Every feature spec (except _template.md) has a '> Status:' line.
-  2. Every Implemented spec is NOT listed in docs/roadmap.md.
-  3. Every roadmap feature link resolves to a real file.
-  4. Every non-Implemented/non-Approved spec that has a feature file is in the roadmap.
-  5. Every env var defined in src/config.py is documented in README.md.
+  2. Every env var defined in src/config.py is documented in README.md.
+  3. Optional legacy roadmap consistency checks (only when docs/roadmap.md exists).
 
 Exit codes: 0 = all good, 1 = one or more violations found.
 """
@@ -183,11 +181,8 @@ def main() -> int:
     if not FEATURES_DIR.is_dir():
         print(f"ERROR: {FEATURES_DIR} not found — run from the repo root.", file=sys.stderr)
         return 1
-    if not ROADMAP_FILE.is_file():
-        print(f"ERROR: {ROADMAP_FILE} not found — run from the repo root.", file=sys.stderr)
-        return 1
-
-    roadmap_text = ROADMAP_FILE.read_text()
+    roadmap_enabled = ROADMAP_FILE.is_file()
+    roadmap_text = ROADMAP_FILE.read_text() if roadmap_enabled else ""
     roadmap_linked_files = set(ROADMAP_LINK_RE.findall(roadmap_text))
 
     readme_text = README_FILE.read_text() if README_FILE.is_file() else ""
@@ -209,44 +204,43 @@ def main() -> int:
         else:
             spec_statuses[spec.name] = status
 
-    # ── Check 2: Implemented specs must NOT be in roadmap ───────────────────
-    for spec_name, status in spec_statuses.items():
-        is_implemented = any(s in status for s in IMPLEMENTED_STATUSES)
-        if is_implemented and spec_name in roadmap_linked_files:
-            errors.append(
-                f"[STALE ROADMAP] features/{spec_name} is Implemented but still "
-                "listed in docs/roadmap.md — remove the roadmap row."
-            )
+    # ── Check 2: legacy roadmap consistency (optional post-migration) ───────
+    if roadmap_enabled:
+        for spec_name, status in spec_statuses.items():
+            is_implemented = any(s in status for s in IMPLEMENTED_STATUSES)
+            if is_implemented and spec_name in roadmap_linked_files:
+                errors.append(
+                    f"[STALE ROADMAP] features/{spec_name} is Implemented but still "
+                    "listed in docs/roadmap.md — remove the roadmap row."
+                )
 
-    # ── Check 3: every roadmap link resolves to a real file ─────────────────
-    for linked_name in sorted(roadmap_linked_files):
-        linked_path = FEATURES_DIR / linked_name
-        if not linked_path.is_file():
-            errors.append(
-                f"[BROKEN LINK] docs/roadmap.md links to features/{linked_name} "
-                "but the file does not exist."
-            )
+        for linked_name in sorted(roadmap_linked_files):
+            linked_path = FEATURES_DIR / linked_name
+            if not linked_path.is_file():
+                errors.append(
+                    f"[BROKEN LINK] docs/roadmap.md links to features/{linked_name} "
+                    "but the file does not exist."
+                )
 
-    # ── Check 4: Planned/Proposed/Approved specs must be in roadmap ─────────
-    for spec_name, status in spec_statuses.items():
-        needs_roadmap = any(s in status for s in ROADMAP_REQUIRED_STATUSES)
-        if needs_roadmap and spec_name not in roadmap_linked_files:
-            warnings.append(
-                f"[MISSING ROADMAP ENTRY] features/{spec_name} has status '{status}' "
-                "but is not listed in docs/roadmap.md — add a roadmap row."
-            )
+        for spec_name, status in spec_statuses.items():
+            needs_roadmap = any(s in status for s in ROADMAP_REQUIRED_STATUSES)
+            if needs_roadmap and spec_name not in roadmap_linked_files:
+                warnings.append(
+                    f"[MISSING ROADMAP ENTRY] features/{spec_name} has status '{status}' "
+                    "but is not listed in docs/roadmap.md — add a roadmap row."
+                )
 
-    # ── Check 5: every config.py env var is documented in README.md ─────────
+    # ── Check 3: every config.py env var is documented in README.md ─────────
     config_vars = extract_config_env_vars()
     cfg_errors, cfg_warnings = check_config_coverage(readme_text)
     errors.extend(cfg_errors)
     warnings.extend(cfg_warnings)
 
-    # ── Check 6: .env.example has no stale entries ───────────────────────────
+    # ── Check 4: .env.example has no stale entries ───────────────────────────
     env_errors, _ = check_env_example_coverage(config_vars)
     errors.extend(env_errors)
 
-    # ── Check 7: docker-compose.yml.example has no stale var references ──────
+    # ── Check 5: docker-compose.yml.example has no stale var references ──────
     compose_errors, _ = check_compose_coverage(config_vars)
     errors.extend(compose_errors)
 
@@ -257,7 +251,16 @@ def main() -> int:
         print(f"✗  {e}")
 
     if not errors and not warnings:
-        print(f"✓  docs lint passed — {len(spec_files)} specs checked, roadmap consistent, README config coverage complete.")
+        if roadmap_enabled:
+            print(
+                f"✓  docs lint passed — {len(spec_files)} specs checked, "
+                "roadmap consistent, README config coverage complete."
+            )
+        else:
+            print(
+                f"✓  docs lint passed — {len(spec_files)} specs checked, "
+                "issue-centric mode active (no docs/roadmap.md), README config coverage complete."
+            )
         return 0
 
     print(

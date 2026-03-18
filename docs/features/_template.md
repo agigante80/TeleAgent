@@ -295,7 +295,7 @@ logger.info("New feature initialised.")
 | `src/main.py` | **Edit** | Initialise `new_module` on startup |
 | `README.md` | **Edit** | Feature bullet, env var rows, command table |
 | `docs/features/[this-file].md` | **Edit** | Mark status as `Implemented` after merge |
-| `docs/roadmap.md` | **Edit** | Mark item as done; add next-iteration item if any |
+| GitHub issue (`type:feature`) | **Edit** | Update `status:*` + `priority:*` labels; add follow-up links if any |
 
 ---
 
@@ -393,7 +393,7 @@ If the feature introduces a new module, new architectural pattern, or new conven
 add a bullet to the relevant section. Keep it to one or two sentences — it is a
 quick-reference file, not documentation.
 
-### `docs/roadmap.md`
+### GitHub issue (`type:feature`)
 
 - Change the roadmap entry for this feature to include a ✅ once merged to `main`.
 - If the feature has a follow-up iteration (v2, stretch goal), add it as a new row.
@@ -424,7 +424,7 @@ Consult `docs/versioning.md` for the full decision guide. Quick reference:
 
 ## Roadmap Update
 
-When this feature is complete, update `docs/roadmap.md`:
+When this feature is complete, update the corresponding GitHub issue:
 
 ```markdown
 | 2.X | ✅ [Feature name] — [one-line summary] | [→ features/this-file.md](features/this-file.md) |
@@ -472,7 +472,7 @@ If a stretch goal or follow-up iteration was identified during implementation, a
 - [ ] `README.md` is updated (features bullet, env var table, commands table — both Telegram and Slack sections).
 - [ ] `.env.example` updated with commented entries for all new env vars.
 - [ ] `docker-compose.yml.example` updated with commented entries for all new env vars.
-- [ ] `docs/roadmap.md` entry is marked done (✅).
+- [ ] GitHub issue labels/status reflect final implemented state.
 - [ ] `docs/features/[this-file].md` status changed to `Implemented`.
 - [ ] `.github/copilot-instructions.md` updated if a new module/pattern was added.
 - [ ] `VERSION` file bumped according to versioning guide.

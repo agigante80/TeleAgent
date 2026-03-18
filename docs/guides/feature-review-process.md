@@ -139,7 +139,7 @@ subsystem must verify the following before a ≥ 9 score can be awarded:
 - README update instructions are specific enough to execute without re-reading the code
 - Acceptance Criteria are unambiguous and testable
 - Open Questions are resolved or have a concrete proposed answer
-- Feature title and status line are consistent with `docs/roadmap.md`
+- Feature title and status line are consistent with the corresponding GitHub issue title/labels
 
 ---
 

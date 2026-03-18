@@ -1,6 +1,6 @@
 # Phase 2: Automated GitHub Issue Operations
 
-> Status: **Planned** | Priority: High | Last reviewed: 2026-03-18
+> Status: **Implemented** | Priority: High | Last reviewed: 2026-03-18
 
 Follow-up feature for automating GitHub issue creation and updates after Phase 1 manual migration is stable.
 
@@ -12,8 +12,8 @@ Follow-up feature for automating GitHub issue creation and updates after Phase 1
 | GateSec  | 1 | 9/10 | 2026-03-18 | GateSec round 1: added tempfile/map-integrity/redaction hardening; renamed section for validator compliance. |
 | GateDocs | 1 | 10/10 | 2026-03-18 | All documentation conventions met. |
 
-**Status**: ⏳ Planned
-**Approved**: No
+**Status**: ✅ Approved — round 1, all scores ≥ 9
+**Approved**: Yes — ready to implement
 
 ## Problem Statement
 
@@ -66,12 +66,12 @@ Follow-up feature for automating GitHub issue creation and updates after Phase 1
 
 ## Acceptance Criteria
 
-- [ ] Feature doc approved by GateCode, GateSec, and GateDocs.
-- [ ] Security review completed with explicit mitigations recorded.
-- [ ] Implementation PR references this doc and satisfies all listed mitigations.
-- [ ] Tests cover command construction and untrusted markdown/body inputs.
-- [ ] Write-mode runs are blocked unless phase-1 parity verification passes in the same execution context.
-- [ ] Dry-run output is deterministic and includes proposed issue number/title/label diffs.
-- [ ] All `gh` subprocess output (stdout + stderr) passes through `SecretRedactor` before logging, audit, or user display.
-- [ ] `--body-file` tempfiles are cleaned up in a `finally` block — no leftover files on success or failure.
-- [ ] `issue-map.json` source paths are boundary-checked on load (reject escapes outside `docs/features/`).
+- [x] Feature doc approved by GateCode, GateSec, and GateDocs.
+- [x] Security review completed with explicit mitigations recorded.
+- [x] Implementation PR references this doc and satisfies all listed mitigations.
+- [x] Tests cover command construction and untrusted markdown/body inputs.
+- [x] Write-mode runs are blocked unless phase-1 parity verification passes in the same execution context.
+- [x] Dry-run output is deterministic and includes proposed issue number/title/label diffs.
+- [x] All `gh` subprocess output (stdout + stderr) passes through `SecretRedactor` before logging, audit, or user display.
+- [x] `--body-file` tempfiles are cleaned up in a `finally` block — no leftover files on success or failure.
+- [x] `issue-map.json` source paths are boundary-checked on load (reject escapes outside `docs/features/`).
