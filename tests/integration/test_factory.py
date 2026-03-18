@@ -7,6 +7,7 @@ from src.ai.factory import create_backend
 from src.ai.copilot import CopilotBackend
 from src.ai.codex import CodexBackend
 from src.ai.direct import DirectAPIBackend
+from src.ai.gemini import GeminiBackend
 
 
 class TestBackendFactory:
@@ -19,25 +20,82 @@ class TestBackendFactory:
 
     def test_creates_codex_backend(self, monkeypatch):
         monkeypatch.setenv("AI_CLI", "codex")
-        monkeypatch.setenv("AI_API_KEY", "sk-test")
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
         cfg = AIConfig()
         backend = create_backend(cfg)
         assert isinstance(backend, CodexBackend)
 
+    def test_creates_codex_backend_no_key_raises(self, monkeypatch):
+        """OPENAI_API_KEY is required for codex — missing key must raise ValueError."""
+        monkeypatch.setenv("AI_CLI", "codex")
+        cfg = AIConfig()
+        with pytest.raises(ValueError, match="OPENAI_API_KEY"):
+            create_backend(cfg)
+
+    def test_factory_codex_uses_openai_key(self, monkeypatch):
+        """Factory passes OPENAI_API_KEY as the api_key to the Codex subprocess."""
+        monkeypatch.setenv("AI_CLI", "codex")
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-codex-key")
+        cfg = AIConfig()
+        backend = create_backend(cfg)
+        assert backend._api_key == "sk-codex-key"
+
     def test_creates_direct_openai_backend(self, monkeypatch):
         monkeypatch.setenv("AI_CLI", "api")
         monkeypatch.setenv("AI_PROVIDER", "openai")
-        monkeypatch.setenv("AI_API_KEY", "sk-test")
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
         monkeypatch.setenv("AI_MODEL", "gpt-4o")
         cfg = AIConfig()
         backend = create_backend(cfg)
         assert isinstance(backend, DirectAPIBackend)
 
+    def test_factory_direct_openai_uses_openai_key(self, monkeypatch):
+        """Factory passes OPENAI_API_KEY to DirectAPIBackend for openai provider."""
+        monkeypatch.setenv("AI_CLI", "api")
+        monkeypatch.setenv("AI_PROVIDER", "openai")
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-openai-key")
+        cfg = AIConfig()
+        backend = create_backend(cfg)
+        assert backend._api_key == "sk-openai-key"
+
     def test_creates_direct_anthropic_backend(self, monkeypatch):
         monkeypatch.setenv("AI_CLI", "api")
         monkeypatch.setenv("AI_PROVIDER", "anthropic")
-        monkeypatch.setenv("AI_API_KEY", "sk-ant-test")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
         monkeypatch.setenv("AI_MODEL", "claude-3-5-sonnet-20241022")
+        cfg = AIConfig()
+        backend = create_backend(cfg)
+        assert isinstance(backend, DirectAPIBackend)
+
+    def test_factory_direct_anthropic_uses_anthropic_key(self, monkeypatch):
+        """Factory passes ANTHROPIC_API_KEY to DirectAPIBackend for anthropic provider."""
+        monkeypatch.setenv("AI_CLI", "api")
+        monkeypatch.setenv("AI_PROVIDER", "anthropic")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-key")
+        cfg = AIConfig()
+        backend = create_backend(cfg)
+        assert backend._api_key == "sk-ant-key"
+
+    def test_direct_openai_no_key_raises(self, monkeypatch):
+        """Missing OPENAI_API_KEY with AI_PROVIDER=openai must raise ValueError."""
+        monkeypatch.setenv("AI_CLI", "api")
+        monkeypatch.setenv("AI_PROVIDER", "openai")
+        cfg = AIConfig()
+        with pytest.raises(ValueError, match="OPENAI_API_KEY"):
+            create_backend(cfg)
+
+    def test_direct_anthropic_no_key_raises(self, monkeypatch):
+        """Missing ANTHROPIC_API_KEY with AI_PROVIDER=anthropic must raise ValueError."""
+        monkeypatch.setenv("AI_CLI", "api")
+        monkeypatch.setenv("AI_PROVIDER", "anthropic")
+        cfg = AIConfig()
+        with pytest.raises(ValueError, match="ANTHROPIC_API_KEY"):
+            create_backend(cfg)
+
+    def test_direct_ollama_no_key_needed(self, monkeypatch):
+        """Ollama provider requires no API key."""
+        monkeypatch.setenv("AI_CLI", "api")
+        monkeypatch.setenv("AI_PROVIDER", "ollama")
         cfg = AIConfig()
         backend = create_backend(cfg)
         assert isinstance(backend, DirectAPIBackend)
@@ -72,6 +130,7 @@ class TestBackendFactory:
 
     def test_codex_model_passed_through(self, monkeypatch):
         monkeypatch.setenv("AI_CLI", "codex")
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
         monkeypatch.setenv("AI_MODEL", "o4")
         cfg = AIConfig()
         backend = create_backend(cfg)
@@ -83,7 +142,7 @@ class TestBackendFactory:
         monkeypatch.setenv("AI_CLI", "api")
         monkeypatch.setenv("AI_CLI_OPTS", "--some-flag")
         monkeypatch.setenv("AI_PROVIDER", "openai")
-        monkeypatch.setenv("AI_API_KEY", "sk-test")
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
         cfg = AIConfig()
         with caplog.at_level(logging.WARNING, logger="src.ai.factory"):
             backend = create_backend(cfg)
@@ -96,7 +155,7 @@ class TestBackendFactory:
         prompt_file.write_text("You are a helpful assistant.")
         monkeypatch.setenv("AI_CLI", "api")
         monkeypatch.setenv("AI_PROVIDER", "openai")
-        monkeypatch.setenv("AI_API_KEY", "sk-test")
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
         monkeypatch.setenv("SYSTEM_PROMPT_FILE", str(prompt_file))
         cfg = AIConfig()
         backend = create_backend(cfg)
@@ -108,7 +167,7 @@ class TestBackendFactory:
         import logging
         monkeypatch.setenv("AI_CLI", "api")
         monkeypatch.setenv("AI_PROVIDER", "openai")
-        monkeypatch.setenv("AI_API_KEY", "sk-test")
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
         monkeypatch.setenv("SYSTEM_PROMPT_FILE", "/nonexistent/path/to/prompt.txt")
         cfg = AIConfig()
         with caplog.at_level(logging.WARNING, logger="src.ai.factory"):
@@ -122,10 +181,33 @@ class TestBackendFactory:
         from src.config import REPO_DIR
         monkeypatch.setenv("AI_CLI", "api")
         monkeypatch.setenv("AI_PROVIDER", "openai")
-        monkeypatch.setenv("AI_API_KEY", "sk-test")
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
         # Point to a path inside REPO_DIR
         inside_path = str(REPO_DIR / "some-prompt.md")
         monkeypatch.setenv("SYSTEM_PROMPT_FILE", inside_path)
         cfg = AIConfig()
         with pytest.raises(ValueError, match="SYSTEM_PROMPT_FILE"):
             create_backend(cfg)
+
+    def test_creates_gemini_backend(self, monkeypatch):
+        monkeypatch.setenv("AI_CLI", "gemini")
+        monkeypatch.setenv("GEMINI_API_KEY", "AIzaTest")
+        cfg = AIConfig()
+        backend = create_backend(cfg)
+        assert isinstance(backend, GeminiBackend)
+        assert backend._api_key == "AIzaTest"
+
+    def test_gemini_requires_api_key(self, monkeypatch):
+        monkeypatch.setenv("AI_CLI", "gemini")
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+        cfg = AIConfig()
+        with pytest.raises(ValueError, match="GEMINI_API_KEY"):
+            create_backend(cfg)
+
+    def test_gemini_model_passed_through(self, monkeypatch):
+        monkeypatch.setenv("AI_CLI", "gemini")
+        monkeypatch.setenv("GEMINI_API_KEY", "k")
+        monkeypatch.setenv("AI_MODEL", "gemini-2.0-flash")
+        cfg = AIConfig()
+        backend = create_backend(cfg)
+        assert backend._model == "gemini-2.0-flash"

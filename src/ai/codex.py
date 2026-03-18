@@ -1,6 +1,8 @@
 import asyncio
 import logging
+import os
 import shlex
+import subprocess
 from collections.abc import AsyncGenerator
 
 from src.ai.adapter import AICLIBackend, SubprocessMixin
@@ -13,18 +15,64 @@ logger = logging.getLogger(__name__)
 
 @backend_registry.register("codex", force=True)
 class CodexBackend(SubprocessMixin, AICLIBackend):
-    """Stateful backend that delegates to the Codex CLI subprocess."""
+    """Stateless-per-invocation backend using OpenAI's Codex CLI.
 
-    def __init__(self, api_key: str, model: str = "o3", opts: str = "") -> None:
+    Each AgentGate message spawns a fresh `codex exec --full-auto --color never
+    --ephemeral --model <model> <prompt>` subprocess. Codex handles multi-step
+    agentic execution within that single call (file edits, tool use, shell commands),
+    but does NOT retain state across calls. AgentGate injects conversation history
+    via build_prompt() (is_stateful = False pattern).
+    """
+
+    is_stateful = False
+
+    def __init__(self, api_key: str, model: str = "gpt-5.3-codex", opts: str = "") -> None:
         self._api_key = api_key
         self._model = model
         self._opts = opts
+        self._login()
+
+    def _login(self) -> None:
+        """Authenticate Codex CLI by piping the API key to `codex login --with-api-key`.
+
+        Codex CLI (Rust) reads credentials from $CODEX_HOME/auth.json only;
+        OPENAI_API_KEY env var is not read by `codex exec`. This mirrors the
+        documented usage: `printenv OPENAI_API_KEY | codex login --with-api-key`.
+        Runs synchronously at startup; credentials persist across restarts in the
+        Docker volume at /data/.codex/auth.json.
+        No-ops gracefully when the `codex` binary is not installed (e.g. in CI).
+        """
+        try:
+            result = subprocess.run(
+                ["codex", "login", "--with-api-key"],
+                input=self._api_key,
+                text=True,
+                capture_output=True,
+            )
+        except FileNotFoundError:
+            logger.debug("codex binary not found — skipping login (not running in Docker?)")
+            return
+        if result.returncode != 0:
+            logger.warning("codex login failed: %s", result.stderr.strip())
+        else:
+            logger.info("CodexBackend: authenticated via API key")
 
     def _make_cmd(self, prompt: str) -> tuple[list[str], dict]:
         env = {**scrubbed_env(), "OPENAI_API_KEY": self._api_key}
-        # Empty opts → full-auto default; non-empty → verbatim (replaces defaults)
-        extra = shlex.split(self._opts) if self._opts else ["--approval-mode", "full-auto"]
-        cmd = ["codex", prompt] + extra + ["--model", self._model]
+        # Re-inject the GitHub token as GH_TOKEN so `gh` CLI and raw git operations
+        # work in model shell commands. scrubbed_env() strips GITHUB_REPO_TOKEN.
+        if github_token := os.environ.get("GITHUB_REPO_TOKEN"):
+            env["GH_TOKEN"] = github_token
+            env["GITHUB_TOKEN"] = github_token
+        # --dangerously-bypass-approvals-and-sandbox: removes the workspace-write network sandbox
+        # so model shell commands (git fetch, curl, etc.) have full outbound access.
+        # Docker is the external isolation boundary; intended for exactly this use case.
+        # Replaced by AI_CLI_OPTS when set — allows per-deployment policy override.
+        approval_flags = shlex.split(self._opts) if self._opts else ["--dangerously-bypass-approvals-and-sandbox"]
+        # Always-on flags: --color never prevents ANSI codes in captured stdout;
+        # --ephemeral avoids accumulating session files in /data across messages.
+        fixed_flags = ["--color", "never", "--ephemeral"]
+        cmd = ["codex", "exec"] + approval_flags + fixed_flags + ["--model", self._model, prompt]
         return cmd, env
 
     async def _create_subprocess(self, prompt: str) -> asyncio.subprocess.Process:
