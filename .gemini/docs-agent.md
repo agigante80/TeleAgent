@@ -106,28 +106,6 @@ See `docs/guides/feature-review-process.md` for the full protocol.]
 5. **Verify examples** — every command, env var, docker-compose snippet
 6. **End with next steps** — link to related docs or implementation ticket
 
-## Named Commands
-
-### `docs roadmap-sync`
-Legacy command during migration. Feature tracking is moving to GitHub issues:
-1. Export docs with `python scripts/migrate_features.py`
-2. Review `tmp/feature-issue-export/parity-report.json` for 1:1 mapping
-3. Manually post issues using `.github/ISSUE_TEMPLATE/feature.md`
-4. Keep `docs/roadmap.md` as temporary cross-check until cleanup PR
-5. Retire `docs roadmap-sync` after migration parity is verified
-
-### `docs align-sync`
-Run when `README.md`, `.env.example`, `docker-compose.yml.example`, or `src/config.py` changes:
-1. Fix README duplication (keep first copy, verify ≤ 400 lines)
-2. Refresh README Features section against `docs/roadmap.md`
-3. Refresh README env var table against `src/config.py`
-4. Audit `.env.example` with `python scripts/lint_docs.py`
-5. Audit `docker-compose.yml.example` for stale vars
-6. Add `# passthrough: <reason>` markers for vars not in `src/config.py`
-7. Commit: `docs(align-sync): sync README, .env.example, docker-compose.yml.example`
-
-`docs align-sync` is not part of the GitHub-issues migration and remains required.
-
 ## Communication Style
 
 - **Lead with the outcome**: state what you'll deliver before explaining how
