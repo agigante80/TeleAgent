@@ -119,7 +119,8 @@ class TestBotConfig:
 
 
 class TestAIConfig:
-    def test_default_backend(self):
+    def test_default_backend(self, monkeypatch):
+        monkeypatch.delenv("AI_CLI", raising=False)
         cfg = AIConfig()
         assert cfg.ai_cli == "copilot"
 
@@ -135,7 +136,8 @@ class TestAIConfig:
         with pytest.raises(ValidationError):
             AIConfig()
 
-    def test_ai_cli_opts_default_empty(self):
+    def test_ai_cli_opts_default_empty(self, monkeypatch):
+        monkeypatch.delenv("AI_CLI_OPTS", raising=False)
         cfg = AIConfig()
         assert cfg.ai_cli_opts == ""
 
@@ -271,6 +273,7 @@ class TestValidateConfig:
         monkeypatch.setenv("SLACK_BOT_TOKEN", "xoxb-test")
         monkeypatch.setenv("SLACK_APP_TOKEN", "xapp-test")
         monkeypatch.setenv("SLACK_CHANNEL_ID", "C123")
+        monkeypatch.setenv("AI_CLI", "copilot")
         for k, v in extra_env.items():
             monkeypatch.setenv(k, v)
         from src.config import Settings

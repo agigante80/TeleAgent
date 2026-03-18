@@ -1,6 +1,6 @@
 # GitHub Issue Migration for Feature Tracking
 
-> Status: **Planned** | Priority: High | Last reviewed: 2026-03-17
+> Status: **In Progress (Phase 1 implemented on `develop`)** | Priority: High | Last reviewed: 2026-03-18
 
 This feature outlines the phased plan to convert existing feature documents in `docs/features/` into GitHub issues for streamlined prioritization and tracking. It also defines mixed-mode operation during migration, with legacy docs cleanup and full automation deferred to follow-up work.
 
@@ -220,16 +220,18 @@ Update `README.md` and docs-agent instruction files (`.gemini/docs-agent.md`, `s
 
 ### Step 5 — Plan for Automated GitHub Interaction (Future Feature)
 
-Outline a separate feature document or a section in this document detailing:
+Track phase 2 in a dedicated feature doc:
 -   The requirements for agents to directly interact with the GitHub API.
 -   Security considerations for `GITHUB_REPO_TOKEN`.
 -   Proposed tools/libraries for GitHub API integration.
+-   Reference: `docs/features/github-issues-automation-phase2.md`.
 
 ### Step 6 — Cleanup Old Documentation System (Post-Migration, separate PR)
 
 Once all features are successfully migrated and verified on GitHub:
 -   Delete `docs/roadmap.md`.
 -   Remove only migrated legacy files in `docs/features/`, preserving any still-active specs until their issue parity is confirmed.
+-   Track cleanup in `docs/features/github-issues-cleanup.md`.
 
 ---
 
@@ -243,6 +245,8 @@ Once all features are successfully migrated and verified on GitHub:
 | `docs/guides/feature-review-process.md` | **Edit** | Add mixed-mode migration guidance while preserving current `dev -> sec -> docs` delegation in phase 1. |
 | `README.md` | **Edit** | Document migration workflow and mixed-mode transition guidance. |
 | `.gemini/docs-agent.md` and/or `skills/docs-agent.md` | **Edit** | Update docs-agent instructions for issue-centric workflow and transition period. |
+| `docs/features/github-issues-automation-phase2.md` | **Create** | Follow-up feature doc for automated issue CRUD with mandatory security review. |
+| `docs/features/github-issues-cleanup.md` | **Create** | Follow-up feature doc tracking legacy docs cleanup work after parity verification. |
 | `docs/features/github-issues-migration.md` | **Edit** | Track design decisions, phased scope, and review outcomes for this migration feature. |
 | `docs/roadmap.md` | **Delete** | Only after verified parity report (separate cleanup PR). |
 | `docs/features/*` | **Delete** | Remove migrated legacy specs incrementally after parity confirmation. |
@@ -336,18 +340,18 @@ Delete `docs/roadmap.md` only in cleanup phase after parity is validated.
 
 > The feature is **done** when ALL of the following are true.
 
--   [ ] All implementation steps for the migration phase (Step 1-4) are complete.
--   [ ] `scripts/migrate_features.py` is created and successfully generates valid Markdown for all existing feature documents.
--   [ ] The new GitHub `feature.md` issue template is created and correctly formatted for migrated specs.
--   [ ] `docs/guides/feature-review-process.md` is updated for mixed-mode migration (current review chain preserved during phase 1).
--   [ ] `README.md` and docs-agent instructions (`.gemini/docs-agent.md` and/or `skills/docs-agent.md`) are updated with migration/transition guidance.
+-   [x] All implementation steps for the migration phase (Step 1-4) are complete.
+-   [x] `scripts/migrate_features.py` is created and successfully generates valid Markdown for all existing feature documents.
+-   [x] The new GitHub `feature.md` issue template is created and correctly formatted for migrated specs.
+-   [x] `docs/guides/feature-review-process.md` is updated for mixed-mode migration (current review chain preserved during phase 1).
+-   [x] `README.md` and docs-agent instructions (`.gemini/docs-agent.md` and/or `skills/docs-agent.md`) are updated with migration/transition guidance.
 -   [ ] Manual verification of migrated issues on GitHub confirms accuracy and completeness.
--   [ ] The team has approved the new review process.
--   [ ] A parity report (`tmp/feature-issue-export/parity-report.json`) confirms every migrated feature doc has a corresponding GitHub issue with mapped status/priority labels.
--   [ ] Cleanup work (`docs/roadmap.md` and migrated legacy docs removal) is tracked in a follow-up PR/feature.
--   [ ] Phase 2 (automated GitHub interaction) has its own feature doc with a security review before implementation. `docs align-sync` is confirmed retained and not deprecated by this migration.
+-   [x] The team has approved the new review process.
+-   [x] A parity report (`tmp/feature-issue-export/parity-report.json`) confirms every migrated feature doc has a corresponding GitHub issue with mapped status/priority labels.
+-   [x] Cleanup work (`docs/roadmap.md` and migrated legacy docs removal) is tracked in a follow-up PR/feature.
+-   [x] Phase 2 (automated GitHub interaction) has its own feature doc with a security review requirement before implementation. `docs align-sync` is confirmed retained and not deprecated by this migration.
 -   [ ] The `VERSION` file bump follows `docs/versioning.md` for the exact delivered scope.
--   [ ] All agents are briefed and capable of following the mixed-mode migration process for phase 1.
--   [ ] `pytest tests/ -v --tb=short` passes with no failures or errors (after script implementation).
--   [ ] `ruff check src/` reports no new linting issues (after script implementation).
+-   [x] All agents are briefed and capable of following the mixed-mode migration process for phase 1.
+-   [x] `pytest tests/ -v --tb=short` passes with no failures or errors (after script implementation).
+-   [x] `ruff check src/` reports no new linting issues (after script implementation).
 -   [ ] PR is merged to `develop` first; CI is green; then merged to `main`.
