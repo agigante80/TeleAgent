@@ -35,6 +35,9 @@ RUN npm install -g @openai/codex@0.114.0
 # Google Gemini CLI — pinned version (update via Dependabot)
 RUN npm install -g @google/gemini-cli@0.33.1
 
+# Anthropic Claude CLI — pinned version (update via Dependabot)
+RUN npm install -g @anthropic-ai/claude-code@2.1.84
+
 # Python dependencies — installed as root so packages are system-wide and
 # accessible regardless of which UID the container runs as at runtime.
 WORKDIR /app

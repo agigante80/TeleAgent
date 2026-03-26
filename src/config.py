@@ -104,6 +104,18 @@ class CodexAIConfig(BaseSettings):
         return [v for v in [self.openai_api_key] if v]
 
 
+class ClaudeAIConfig(BaseSettings):
+    """Fields exclusive to AI_CLI=claude."""
+
+    model_config = SettingsConfigDict(extra="ignore")
+
+    anthropic_api_key: str = ""  # ANTHROPIC_API_KEY — required when AI_CLI=claude; passed into subprocess
+    claude_model: str = ""       # CLAUDE_MODEL — overrides AI_MODEL for Claude CLI; empty = use AI_MODEL
+
+    def secret_values(self) -> list[str]:
+        return [v for v in [self.anthropic_api_key] if v]
+
+
 class DirectAIConfig(BaseSettings):
     """Fields exclusive to AI_CLI=api (DirectAPIBackend)."""
 
@@ -130,7 +142,7 @@ class AIConfig(BaseSettings):
 
     model_config = SettingsConfigDict(extra="ignore")
 
-    ai_cli: Literal["copilot", "codex", "api", "gemini"] = "copilot"
+    ai_cli: Literal["copilot", "codex", "api", "gemini", "claude"] = "copilot"
 
     ai_model: str = ""    # AI_MODEL — shared model name; ready_msg and codex fall back to this
 
@@ -147,11 +159,12 @@ class AIConfig(BaseSettings):
     copilot: CopilotAIConfig = Field(default_factory=CopilotAIConfig)
     codex: CodexAIConfig = Field(default_factory=CodexAIConfig)
     direct: DirectAIConfig = Field(default_factory=DirectAIConfig)
+    claude: ClaudeAIConfig = Field(default_factory=ClaudeAIConfig)
 
     def secret_values(self) -> list[str]:
         # Delegate to nested sub-configs so SecretRedactor._collect_secrets() (which only
         # iterates top-level Settings fields) still discovers all per-backend key values.
-        base = self.copilot.secret_values() + self.direct.secret_values() + self.codex.secret_values()
+        base = self.copilot.secret_values() + self.direct.secret_values() + self.codex.secret_values() + self.claude.secret_values()
         return base + [v for v in [self.gemini_api_key] if v]
 
 

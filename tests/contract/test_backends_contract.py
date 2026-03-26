@@ -9,6 +9,7 @@ from src.ai.codex import CodexBackend
 from src.ai.direct import DirectAPIBackend
 from src.ai.copilot import CopilotBackend
 from src.ai.gemini import GeminiBackend
+from src.ai.claude import ClaudeBackend
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -26,11 +27,15 @@ def make_direct():
 def make_gemini():
     return GeminiBackend(api_key="test-key", model="gemini-2.5-pro")
 
+def make_claude():
+    return ClaudeBackend(api_key="test-key", model="claude-sonnet-4-6")
+
 ALL_BACKENDS = [
     pytest.param(make_copilot, id="copilot"),
     pytest.param(make_codex, id="codex"),
     pytest.param(make_direct, id="direct"),
     pytest.param(make_gemini, id="gemini"),
+    pytest.param(make_claude, id="claude"),
 ]
 
 
@@ -74,7 +79,7 @@ class TestAdapterContract:
         assert make_codex().is_stateful is False
 
     def test_clear_history_does_not_raise_on_any_backend(self):
-        for factory in [make_copilot, make_codex, make_direct, make_gemini]:
+        for factory in [make_copilot, make_codex, make_direct, make_gemini, make_claude]:
             backend = factory()
             backend.clear_history()  # must not raise
 
@@ -104,7 +109,7 @@ class TestAdapterContract:
 
     def test_cancel_calls_backend_close(self):
         """backend.close() must be re-entrant and leave the backend usable after cancel."""
-        for factory in [make_copilot, make_codex, make_direct, make_gemini]:
+        for factory in [make_copilot, make_codex, make_direct, make_gemini, make_claude]:
             backend = factory()
             # close() is the post-cancel cleanup — must not raise and backend must stay usable
             backend.close()  # first call (during cancel)
@@ -113,3 +118,6 @@ class TestAdapterContract:
 
     def test_gemini_is_not_stateful(self):
         assert make_gemini().is_stateful is False
+
+    def test_claude_is_not_stateful(self):
+        assert make_claude().is_stateful is False

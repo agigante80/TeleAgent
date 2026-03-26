@@ -27,7 +27,7 @@ _COMPOSE_VAR_RE = re.compile(r'\b([A-Z][A-Z0-9_]{2,})=')
 # Nested BaseSettings fields on Settings / AIConfig — not direct env vars.
 _NESTED_CONFIG_FIELDS = {
     "telegram", "github", "log", "bot", "ai", "voice", "slack", "audit",
-    "copilot", "codex", "direct", "model_config",
+    "copilot", "codex", "direct", "claude", "model_config",
 }
 
 

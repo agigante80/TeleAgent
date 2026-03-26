@@ -181,8 +181,9 @@ Copy `.env.example` — it documents every variable with examples.
 | `COPILOT_MODEL` | — | Per-backend model for `copilot`; falls back to `AI_MODEL` when empty |
 | `AI_PROVIDER` | — | For `api`: `openai` \| `anthropic` \| `ollama` \| `openai-compat` |
 | `OPENAI_API_KEY` | — | Required when `AI_CLI=codex` or `AI_CLI=api` + `AI_PROVIDER=openai`. Standard OpenAI env var. |
-| `ANTHROPIC_API_KEY` | — | Required when `AI_CLI=api` + `AI_PROVIDER=anthropic`. Standard Anthropic env var. |
+| `ANTHROPIC_API_KEY` | — | Required when `AI_CLI=claude` or `AI_CLI=api` + `AI_PROVIDER=anthropic`. Standard Anthropic env var. |
 | `CODEX_MODEL` | — | Per-backend model for `codex`; falls back to `AI_MODEL` then `o3` |
+| `CLAUDE_MODEL` | — | Per-backend model for `claude`; falls back to `AI_MODEL` when empty |
 | `AI_BASE_URL` | — | Base URL for Ollama or compatible endpoints |
 | `AI_CLI_OPTS` | — | Raw options passed verbatim to the CLI subprocess. **Empty (default) = full-auto per backend** (Copilot: `--allow-all`; Codex: `--approval-mode full-auto`; Gemini: `--non-interactive`). **When set, replaces the defaults entirely** — must include full-auto flags if still needed (e.g. `--allow-all --allow-url github.com`). Ignored (with a warning) when `AI_CLI=api`. |
 | `COPILOT_SKILLS_DIRS` | — | Colon-separated paths to extra Copilot skills directories (mount via Docker volume, e.g. `/skills`) |

@@ -8,6 +8,7 @@ from src.ai.copilot import CopilotBackend
 from src.ai.codex import CodexBackend
 from src.ai.direct import DirectAPIBackend
 from src.ai.gemini import GeminiBackend
+from src.ai.claude import ClaudeBackend
 
 
 class TestBackendFactory:
@@ -211,3 +212,36 @@ class TestBackendFactory:
         cfg = AIConfig()
         backend = create_backend(cfg)
         assert backend._model == "gemini-2.0-flash"
+
+    def test_creates_claude_backend(self, monkeypatch):
+        monkeypatch.setenv("AI_CLI", "claude")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+        cfg = AIConfig()
+        backend = create_backend(cfg)
+        assert isinstance(backend, ClaudeBackend)
+        assert backend._api_key == "sk-ant-test"
+
+    def test_claude_requires_api_key(self, monkeypatch):
+        monkeypatch.setenv("AI_CLI", "claude")
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        cfg = AIConfig()
+        with pytest.raises(ValueError, match="ANTHROPIC_API_KEY"):
+            create_backend(cfg)
+
+    def test_claude_model_passed_through(self, monkeypatch):
+        monkeypatch.setenv("AI_CLI", "claude")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
+        monkeypatch.setenv("AI_MODEL", "claude-sonnet-4-6")
+        cfg = AIConfig()
+        backend = create_backend(cfg)
+        assert backend._model == "claude-sonnet-4-6"
+
+    def test_claude_model_overrides_ai_model(self, monkeypatch):
+        """CLAUDE_MODEL takes precedence over AI_MODEL for the Claude backend."""
+        monkeypatch.setenv("AI_CLI", "claude")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
+        monkeypatch.setenv("CLAUDE_MODEL", "claude-opus-4-6")
+        monkeypatch.setenv("AI_MODEL", "claude-sonnet-4-6")
+        cfg = AIConfig()
+        backend = create_backend(cfg)
+        assert backend._model == "claude-opus-4-6"
