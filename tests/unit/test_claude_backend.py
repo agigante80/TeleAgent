@@ -76,10 +76,16 @@ class TestMakeCmd:
         assert "-p" in cmd
         assert "my prompt" in cmd
 
-    def test_env_contains_api_key(self):
+    def test_env_contains_api_key_when_provided(self):
         b = ClaudeBackend(api_key="sk-ant-test")
         _, env = b._make_cmd("hello")
         assert env["ANTHROPIC_API_KEY"] == "sk-ant-test"
+
+    def test_env_omits_api_key_when_empty(self):
+        """OAuth mode: ANTHROPIC_API_KEY must NOT appear in subprocess env."""
+        b = ClaudeBackend(api_key="")
+        _, env = b._make_cmd("hello")
+        assert "ANTHROPIC_API_KEY" not in env
 
     def test_env_does_not_contain_other_secrets(self):
         """scrubbed_env() must have stripped other AgentGate secrets from the env."""

@@ -109,7 +109,7 @@ class ClaudeAIConfig(BaseSettings):
 
     model_config = SettingsConfigDict(extra="ignore")
 
-    anthropic_api_key: str = ""  # ANTHROPIC_API_KEY — required when AI_CLI=claude; passed into subprocess
+    anthropic_api_key: str = ""  # ANTHROPIC_API_KEY — optional; omit to use OAuth credentials (claude login)
     claude_model: str = ""       # CLAUDE_MODEL — overrides AI_MODEL for Claude CLI; empty = use AI_MODEL
 
     def secret_values(self) -> list[str]:

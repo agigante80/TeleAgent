@@ -181,7 +181,7 @@ Copy `.env.example` — it documents every variable with examples.
 | `COPILOT_MODEL` | — | Per-backend model for `copilot`; falls back to `AI_MODEL` when empty |
 | `AI_PROVIDER` | — | For `api`: `openai` \| `anthropic` \| `ollama` \| `openai-compat` |
 | `OPENAI_API_KEY` | — | Required when `AI_CLI=codex` or `AI_CLI=api` + `AI_PROVIDER=openai`. Standard OpenAI env var. |
-| `ANTHROPIC_API_KEY` | — | Required when `AI_CLI=claude` or `AI_CLI=api` + `AI_PROVIDER=anthropic`. Standard Anthropic env var. |
+| `ANTHROPIC_API_KEY` | — | Required when `AI_CLI=api` + `AI_PROVIDER=anthropic`. Optional when `AI_CLI=claude` — omit to use OAuth credentials (`claude login`). |
 | `CODEX_MODEL` | — | Per-backend model for `codex`; falls back to `AI_MODEL` then `o3` |
 | `CLAUDE_MODEL` | — | Per-backend model for `claude`; falls back to `AI_MODEL` when empty |
 | `AI_BASE_URL` | — | Base URL for Ollama or compatible endpoints |
@@ -377,6 +377,28 @@ AI_MODEL=llama3.2
 AI_BASE_URL=http://host.docker.internal:11434
 ```
 
+### Anthropic Claude CLI ✅ Tested
+
+Supports two authentication modes:
+
+**API Key mode** — billed to your Anthropic API account:
+
+```env
+AI_CLI=claude
+ANTHROPIC_API_KEY=sk-ant-...
+AI_MODEL=claude-sonnet-4-6
+```
+
+**OAuth mode (Pro / Max subscription)** — omit `ANTHROPIC_API_KEY` and authenticate via `claude login`:
+
+```env
+AI_CLI=claude
+AI_MODEL=claude-sonnet-4-6
+# No ANTHROPIC_API_KEY — uses OAuth credentials from claude login
+```
+
+See [Claude CLI OAuth Setup](#claude-cli-oauth-setup) below for Docker authentication instructions.
+
 ### Google Gemini CLI ✅ Tested
 
 Requires an API key from [Google AI Studio](https://aistudio.google.com/app/apikey).
@@ -386,6 +408,65 @@ AI_CLI=gemini
 GEMINI_API_KEY=AIza...
 AI_MODEL=gemini-2.5-pro  # optional — omit to use CLI default
 ```
+
+---
+
+## Claude CLI OAuth Setup
+
+Use this when you have a **Claude Pro or Max subscription** and want to skip the pay-per-use API key.
+
+### Option A: Authenticate inside the container (recommended)
+
+1. Start the container normally (without `ANTHROPIC_API_KEY` in your `.env`):
+
+   ```bash
+   docker compose up -d
+   ```
+
+2. Exec into the running container:
+
+   ```bash
+   docker exec -it <container_name> claude
+   ```
+
+3. When the CLI prompts you to log in and a browser cannot open, press **`c`** to copy the login URL to your clipboard.
+
+4. Paste the URL into a browser on any device where you are logged into your [claude.ai](https://claude.ai) account.
+
+5. Click **Authorize**. The console session detects the login automatically.
+
+6. Exit the Claude CLI (`Ctrl+C` or `/exit`), then restart the container so AgentGate picks up the credentials:
+
+   ```bash
+   docker compose restart
+   ```
+
+> **Note:** OAuth credentials are stored in `/root/.claude/` inside the container. They persist as long as the container's filesystem is intact. A `docker compose down` followed by `up` will lose them — use **Option B** for persistence across container recreations.
+
+### Option B: Mount host credentials
+
+1. On your host machine, run `claude` and complete the OAuth login (browser or clipboard method).
+
+2. Mount your `~/.claude/` directory into the container. Add to `docker-compose.yml`:
+
+   ```yaml
+   volumes:
+     - ~/.claude:/root/.claude:ro
+   ```
+
+3. Start the container without `ANTHROPIC_API_KEY`:
+
+   ```bash
+   docker compose up -d
+   ```
+
+   The Claude CLI inside the container will use the mounted OAuth credentials.
+
+### Important
+
+- **Ensure `ANTHROPIC_API_KEY` is unset** in your `.env` file. If present, the CLI will use it (API billing) instead of OAuth credentials.
+- The `/gate run` bot command is **not suitable** for `claude login` — the login flow is interactive and requires a TTY.
+- OAuth tokens expire periodically. If the bot starts returning auth errors, re-run the login flow.
 
 ---
 

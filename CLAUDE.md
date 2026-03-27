@@ -54,9 +54,9 @@ Pydantic `BaseSettings` split into sub-configs: `TelegramConfig`, `SlackConfig`,
 
 ### Platform layer (`src/platform/`)
 
-- `common.py`: Shared helpers -- `build_prompt()`, `save_to_history()`, `thinking_ticker()`
+- `common.py`: Shared helpers -- `build_prompt()`, `save_to_history()`, `thinking_ticker()`, `split_text()`, `is_allowed_slack()`
 - `bot.py`: Telegram bot with `@_requires_auth` decorator on all handlers
-- `slack.py`: Slack bot using `slack-bolt[async]` Socket Mode
+- `slack.py`: Slack bot using `slack-bolt[async]` Socket Mode. Supports multi-agent features (`TRUSTED_AGENT_BOT_IDS`), delegation blocks (`[DELEGATE: ...]`), Block Kit thinking placeholders, and thread replies (`SLACK_THREAD_REPLIES`)
 
 Platform selected by `PLATFORM` env var (default `telegram`).
 
@@ -72,10 +72,14 @@ Generic `Registry[T]` with four instances: `backend_registry`, `platform_registr
 
 - **`executor.py`**: `run_shell()` runs in `REPO_DIR`, `is_destructive()` keyword-checks, `sanitize_git_ref()` validates user input before git commands
 - **`redact.py`**: `SecretRedactor` scrubs outgoing text of known tokens/patterns
-- **`history.py`**: `ConversationStorage` ABC with `SQLiteStorage`. `build_context()` prepends history for stateless backends. `HISTORY_TURNS` controls injection count (default 10)
-- **`audit.py`**: `AuditLog` ABC with `SQLiteAuditLog`. Exception-swallowing design. Callers must redact before recording
-- **`services.py`**: `Services` dataclass bundles `ShellService`, `RepoService`, `AuditLog`. Constructed once in `main.py`
+- **`history.py`**: `ConversationStorage` ABC with `SQLiteStorage` and `InMemoryStorage`. `build_context()` prepends history for stateless backends. `HISTORY_TURNS` controls injection count (default 10). Backend selected via `STORAGE_BACKEND` env var (`sqlite` or `memory`)
+- **`audit.py`**: `AuditLog` ABC with `SQLiteAuditLog` and `NullAuditLog`. Exception-swallowing design. Callers must redact before recording. `verify()` smoke-tests write→read at startup. Backend selected via `AUDIT_BACKEND` (`sqlite` or `null` when `AUDIT_ENABLED=false`)
+- **`services.py`**: `Services` dataclass bundles `ShellService`, `RepoService`, `SecretRedactor`, and optional `Transcriber`. Constructed once in `main.py`. `AuditLog` is passed separately to bot constructors
 - **`runtime.py`**: Auto-detects and installs deps from `package.json`/`pyproject.toml`/`requirements.txt`/`go.mod`
+- **`ready_msg.py`**: `build_ready_message()` and `ai_label()` -- generates the startup status message for both platforms
+- **`logging_setup.py`**: `configure_logging()` -- rotating file logs with daily rotation, 14-day retention, gzip compression
+- **`repo.py`**: Git operations (clone, pull, status, auth) used during startup and by bot commands
+- **`transcriber.py`**: `Transcriber` ABC with `OpenAITranscriber` and `NullTranscriber`. Voice message support via `VOICE_PROVIDER` env var
 
 ## Key Conventions
 

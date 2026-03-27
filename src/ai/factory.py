@@ -105,8 +105,6 @@ def create_backend(ai: AIConfig) -> AICLIBackend:
 
     if ai.ai_cli == "claude":
         claude_key = ai.claude.anthropic_api_key
-        if not claude_key:
-            raise ValueError("ANTHROPIC_API_KEY must be set when AI_CLI=claude")
         claude_model = ai.claude.claude_model or ai.ai_model
         return backend_registry.create(
             "claude",

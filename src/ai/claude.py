@@ -38,7 +38,9 @@ class ClaudeBackend(SubprocessMixin, AICLIBackend):
         self._opts = opts
 
     def _make_cmd(self, prompt: str) -> tuple[list[str], dict]:
-        env = {**scrubbed_env(), "ANTHROPIC_API_KEY": self._api_key}
+        env = scrubbed_env()
+        if self._api_key:
+            env["ANTHROPIC_API_KEY"] = self._api_key
         # Re-inject the GitHub token as GH_TOKEN so `gh` CLI and raw git
         # operations work in model shell commands. scrubbed_env() strips
         # GITHUB_REPO_TOKEN for safety.

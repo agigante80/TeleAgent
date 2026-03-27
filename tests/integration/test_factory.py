@@ -221,12 +221,14 @@ class TestBackendFactory:
         assert isinstance(backend, ClaudeBackend)
         assert backend._api_key == "sk-ant-test"
 
-    def test_claude_requires_api_key(self, monkeypatch):
+    def test_claude_works_without_api_key(self, monkeypatch):
+        """OAuth mode: factory succeeds without ANTHROPIC_API_KEY."""
         monkeypatch.setenv("AI_CLI", "claude")
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         cfg = AIConfig()
-        with pytest.raises(ValueError, match="ANTHROPIC_API_KEY"):
-            create_backend(cfg)
+        backend = create_backend(cfg)
+        assert isinstance(backend, ClaudeBackend)
+        assert backend._api_key == ""
 
     def test_claude_model_passed_through(self, monkeypatch):
         monkeypatch.setenv("AI_CLI", "claude")
