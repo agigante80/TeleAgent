@@ -270,6 +270,7 @@ environment:
 | `TRUSTED_AGENT_BOT_IDS` | Slack bot IDs (or `Name:prefix` pairs) that bypass the normal user filter for agent-to-agent messaging (e.g. `B012,GateCode:dev`) |
 | `BRANCH` | Git branch to clone (default: `main`) |
 | `REPO_HOST_PATH` | Host directory to bind-mount as `/repo` — persists across rebuilds |
+| `TZ` | Container timezone (default: `UTC`). Use any IANA name, e.g. `Europe/London` or `America/New_York` |
 
 ---
 
